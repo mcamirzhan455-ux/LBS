@@ -1,1 +1,2971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vienna Elevation Router</title>
 
+  <!-- Leaflet CSS — styles for the map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Chart.js — for the elevation profile chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
+
+  <style>
+    /* -----------------------------------------------------------------------
+       General page layout
+    ----------------------------------------------------------------------- */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    /* Top navigation bar */
+    header {
+      background: #1a1a2e;
+      color: white;
+      padding: 14px 24px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    /* Main layout: sidebar on the left, map on the right */
+    #app {
+      display: flex;
+      height: calc(100vh - 50px); /* Full height minus the header */
+    }
+
+    /* -----------------------------------------------------------------------
+       Sidebar — search inputs and route results
+    ----------------------------------------------------------------------- */
+    #sidebar {
+      width: 340px;
+      background: white;
+      padding: 20px;
+      overflow-y: auto;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #sidebar h2 {
+      font-size: 1rem;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+
+    /* Input fields for coordinates */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-group label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+    }
+
+    .input-group input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #4a90d9;
+    }
+
+    /* Suggestions dropdown for address search */
+    .suggestions {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: white;
+      max-height: 150px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .suggestion-item {
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .suggestion-item:hover {
+      background: #f0f7ff;
+    }
+
+    /* Current location button */
+    .location-btn {
+      background: none;
+      border: 1px solid #4a90d9;
+      color: #4a90d9;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: 100%;
+      text-align: left;
+    }
+
+    .location-btn:hover {
+      background: #f0f7ff;
+    }
+
+    /* Routing engine toggle */
+    .router-toggle {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+    .router-option {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .router-option input[type="radio"] {
+      display: none;
+    }
+
+    .router-option > div {
+      min-width: 0;
+      overflow: hidden;
+      text-align: center;
+      width: 100%;
+    }
+    .router-option:has(input:checked) {
+      border-color: #4a90d9;
+      background: #f0f7ff;
+      font-weight: 600;
+    }
+    .router-option small {
+      display: block;
+      font-size: 0.72rem;
+      color: #888;
+      font-weight: 400;
+      margin-top: 1px;
+    }
+
+    /* The "Get Routes" button */
+    #get-routes-btn {
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    #get-routes-btn:hover {
+      background: #4a90d9;
+    }
+
+    /* Instruction text shown before routes are loaded */
+    #instructions {
+      font-size: 0.85rem;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    /* -----------------------------------------------------------------------
+       Route cards — one per profile (flattest / balanced / steepest)
+    ----------------------------------------------------------------------- */
+    .route-card {
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border 0.2s, box-shadow 0.2s;
+    }
+
+    .route-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+
+    /* Each profile has its own colour */
+    .route-card.flattest  { background: #e8f5e9; border-color: #4caf50; }
+    .route-card.balanced  { background: #fff8e1; border-color: #ff9800; }
+    .route-card.steepest  { background: #fce4ec; border-color: #e91e63; }
+
+    /* Highlight the selected route */
+    .route-card.active {
+      box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.5);
+    }
+
+    .route-card h3 {
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+      text-transform: capitalize;
+    }
+
+    .route-card .stats {
+      font-size: 0.82rem;
+      color: #555;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Elevation profile chart
+    ----------------------------------------------------------------------- */
+    #chart-container {
+      margin-top: 8px;
+    }
+
+    #chart-container h2 {
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      color: #1a1a2e;
+    }
+
+    #elevation-chart {
+      width: 100%;
+      height: 160px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Map — takes up the rest of the screen
+    ----------------------------------------------------------------------- */
+    #map {
+      flex: 1;
+      z-index: 0;
+    }
+
+    /* Loading spinner overlay shown while fetching routes */
+    #loading {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 16px 24px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      z-index: 999;
+      font-weight: bold;
+      color: #1a1a2e;
+    }
+
+    /* Take a Lap button */
+    #lap-btn {
+      background: white;
+      color: #1a1a2e;
+      border: 2px solid #1a1a2e;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      width: 100%;
+    }
+    #lap-btn:hover { background: #f0f7ff; border-color: #4a90d9; color: #4a90d9; }
+    #lap-btn.active { background: #e8f0fe; border-color: #4a90d9; }
+
+    /* Distance chips revealed under the lap button */
+    #lap-chips {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .lap-chip {
+      flex: 1;
+      min-width: calc(33% - 8px);
+      padding: 8px 4px;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      background: white;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      color: #1a1a2e;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .lap-chip:hover { background: #e8f0fe; border-color: #4a90d9; }
+
+    /* Navigate button on each route card */
+    .nav-btn {
+      margin-top: 10px;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-weight: 600;
+      width: 100%;
+    }
+    .nav-btn:hover { background: #4a90d9; }
+
+    /* Navigation overlay — slides up from the bottom */
+    #nav-panel {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1a1a2e;
+      color: white;
+      padding: 16px 24px 20px;
+      z-index: 1000;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    }
+    .nav-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #nav-route-name { font-weight: bold; font-size: 1rem; letter-spacing: 1px; }
+    #nav-status { font-size: 0.85rem; }
+    #nav-stop-btn {
+      background: #e91e63;
+      border: none;
+      color: white;
+      padding: 6px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.85rem;
+    }
+    #nav-stop-btn:hover { background: #c2185b; }
+    .nav-stats { display: flex; gap: 36px; }
+    .nav-stat { display: flex; flex-direction: column; }
+    .nav-stat span { font-size: 1.9rem; font-weight: bold; line-height: 1; }
+    .nav-stat small { font-size: 0.72rem; opacity: 0.65; margin-top: 3px; }
+
+/* new changes */
+    .pick-btn {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  margin-top: 4px;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+
+.pick-btn:hover {
+  background: #e8f4f5;
+  border-color: #4a9fa8;
+}
+
+.pick-btn.active-pick {
+  background: #d0f0f4;
+  border-color: #0a8a96;
+  color: #0a5c63;
+  font-weight: 600;
+}
+
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.gpx-btn {
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gpx-btn:hover {
+  background: #e8f4f5;
+  border-color: #4a9fa8;
+  color: #1a6b72;
+}
+    /* -----------------------------------------------------------------------
+       Responsive — tablets and phones (≤ 768px)
+    ----------------------------------------------------------------------- */
+    @media (max-width: 768px) {
+      header {
+        padding: 10px 16px;
+        font-size: 1rem;
+        letter-spacing: 0.5px;
+      }
+
+      /* Stack map on top, sidebar below */
+      #app {
+        flex-direction: column;
+        height: calc(100vh - 44px);
+      }
+
+      /* Map takes the top 52% of the app area */
+      #map {
+        flex: 0 0 52%;
+        min-height: 220px;
+      }
+
+      /* Sidebar fills the rest and scrolls internally */
+      #sidebar {
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+        padding: 14px 16px;
+        gap: 12px;
+        box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+      }
+
+      /* Shorter elevation chart to save space */
+      #elevation-chart {
+        height: 110px;
+      }
+
+      /* Compact nav panel numbers */
+      .nav-stat span {
+        font-size: 1.4rem;
+      }
+
+      .nav-stats {
+        gap: 20px;
+      }
+
+      #nav-panel {
+        padding: 12px 16px 16px;
+      }
+    }
+
+    /* Sidebar collapse button inside nav panel — only shown on mobile */
+    #nav-controls-btn {
+      display: none;
+      background: rgba(255,255,255,0.12);
+      border: none;
+      color: white;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      align-self: center;
+    }
+    #nav-controls-btn:hover { background: rgba(255,255,255,0.2); }
+
+    @media (max-width: 768px) {
+      /* Sidebar slides away during navigation */
+      #sidebar {
+        transition: max-height 0.35s ease, padding-top 0.35s ease, padding-bottom 0.35s ease;
+        max-height: 9999px; /* large enough to never clip normally */
+      }
+
+      #app.nav-mode #sidebar {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+      }
+
+      /* Map fills the full app height when sidebar is hidden */
+      #app.nav-mode #map {
+        flex: 1;
+      }
+
+      #nav-controls-btn {
+        display: block;
+      }
+
+      /* When user manually re-opens controls during nav, restore sidebar */
+      #app.nav-mode.controls-open #sidebar {
+        max-height: 9999px;
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }
+
+      /* Stack router toggle vertically — side by side is too cramped on phones */
+      .router-toggle {
+        flex-direction: column;
+      }
+
+      .router-option {
+        font-size: 0.8rem;
+      }
+
+      .router-option small {
+        font-size: 0.68rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    /* Extra-small phones (≤ 420px) */
+    @media (max-width: 420px) {
+      /* Route card stats in a row to save vertical space */
+      .route-card .stats {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+    }
+
+/* -----------------------------------------------------------------------
+   Weather Widget — floating top-right on map
+----------------------------------------------------------------------- */
+#weather-widget {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 999;
+  background: rgba(26, 26, 46, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: none;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 200px;
+  max-width: 240px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+#weather-widget.loaded { display: flex; }
+
+.weather-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.weather-temp {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.weather-desc {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+
+.weather-details {
+  display: flex;
+  gap: 10px;
+  font-size: 0.72rem;
+  opacity: 0.75;
+  flex-wrap: wrap;
+}
+
+.weather-verdict {
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.verdict-great  { background: rgba(76,175,80,0.25);  border-left: 3px solid #4caf50; }
+.verdict-ok     { background: rgba(255,152,0,0.25);  border-left: 3px solid #ff9800; }
+.verdict-bad    { background: rgba(233,30,99,0.25);  border-left: 3px solid #e91e63; }
+
+.weather-refresh {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: white;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: 2px;
+}
+.weather-refresh:hover { background: rgba(255,255,255,0.1); }
+
+@media (max-width: 768px) {
+  #weather-widget {
+    top: auto;
+    bottom: 80px;  /* выше nav-panel */
+    right: 8px;
+    max-width: 180px;
+    font-size: 0.9em;
+  }
+}
+
+
+/* -----------------------------------------------------------------------
+   Pace Calculator
+----------------------------------------------------------------------- */
+#pace-calculator {
+  background: #f8f9ff;
+  border: 1px solid #dde3f0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+#pace-calculator h2 {
+  font-size: 0.85rem;
+  color: #1a1a2e;
+  margin-bottom: 10px;
+}
+
+.pace-inputs {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.pace-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.pace-field label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.pace-field input {
+  padding: 7px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  width: 100%;
+}
+
+.pace-field input:focus {
+  outline: none;
+  border-color: #4a90d9;
+}
+
+.calc-btn {
+  background: #1a1a2e;
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.2s;
+  height: 34px;
+}
+
+.calc-btn:hover { background: #4a90d9; }
+
+.calc-results {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.calc-results.visible { display: flex; }
+
+.calc-route-block {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.calc-route-block.flattest { background: #e8f5e9; }
+.calc-route-block.balanced { background: #fff8e1; }
+.calc-route-block.steepest { background: #fce4ec; }
+
+.calc-route-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  margin-bottom: 6px;
+  color: #1a1a2e;
+}
+
+.calc-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+
+.calc-stat {
+  font-size: 0.78rem;
+  color: #444;
+}
+
+.calc-stat strong {
+  color: #1a1a2e;
+}
+
+.splits-toggle {
+  font-size: 0.72rem;
+  color: #4a90d9;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 4px;
+  text-decoration: underline;
+}
+
+.splits-table {
+  display: none;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  margin-top: 6px;
+}
+
+.splits-table.open { display: table; }
+
+.splits-table th {
+  text-align: left;
+  color: #888;
+  font-weight: 600;
+  padding: 3px 4px;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.splits-table td {
+  padding: 3px 4px;
+  color: #333;
+}
+
+.splits-table tr:nth-child(even) td {
+  background: rgba(0,0,0,0.03);
+}
+
+
+/* -----------------------------------------------------------------------
+   Sun Indicator
+----------------------------------------------------------------------- */
+#sun-indicator {
+  position: absolute;
+  bottom: 32px;
+  right: 12px;
+  z-index: 999;
+  background: rgba(26, 26, 46, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  border-radius: 12px;
+  padding: 10px 13px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+#sun-indicator.loaded { display: flex; }
+
+#sun-compass {
+  width: 52px;
+  height: 52px;
+  position: relative;
+}
+
+#sun-compass svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sun-label {
+  opacity: 0.7;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.sun-phase {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #ffd54f;
+}
+
+@media (max-width: 768px) {
+  #sun-indicator {
+    bottom: 90px;
+    right: 8px;
+  }
+}
+
+
+
+/* -----------------------------------------------------------------------
+   Expanded elevation profile modal
+----------------------------------------------------------------------- */
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.expand-profile-btn {
+  background: none;
+  border: 1px solid #d6d9df;
+  color: #1a1a2e;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.expand-profile-btn:hover {
+  background: #f5f8ff;
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+
+#profile-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  background: rgba(10, 14, 28, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+#profile-modal.open {
+  display: flex;
+}
+
+.profile-modal-card {
+  width: min(1100px, 96vw);
+  max-height: 92vh;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.28);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid #eceff4;
+}
+
+.profile-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  text-transform: capitalize;
+}
+
+.profile-close-btn {
+  background: none;
+  border: 1px solid #d6d9df;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.profile-close-btn:hover {
+  background: #f7f9fc;
+}
+
+.profile-modal-body {
+  padding: 18px 20px 20px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+#expanded-chart-wrap {
+  background: #fbfcfe;
+  border: 1px solid #edf1f6;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+#expanded-elevation-chart {
+  width: 100%;
+  height: 340px;
+}
+
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-stat-card {
+  background: #f7f9fc;
+  border: 1px solid #e9edf3;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.profile-stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7a8392;
+  margin-bottom: 6px;
+}
+
+.profile-stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.profile-summary {
+  background: #fcfcfd;
+  border: 1px solid #edf1f6;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: #4b5565;
+}
+
+.profile-insight {
+  display: inline-block;
+  margin-right: 10px;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 900px) {
+  .profile-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  #profile-modal {
+    padding: 10px;
+  }
+
+  .profile-modal-card {
+    width: 100%;
+    max-height: 96vh;
+    border-radius: 14px;
+  }
+
+  .profile-modal-top,
+  .profile-modal-body {
+    padding: 14px;
+  }
+
+  #expanded-elevation-chart {
+    height: 260px;
+  }
+
+  .profile-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contour-label {
+  background: rgba(255,255,255,0.85);
+  border: 1px solid #cfcfcf;
+  color: #5c4b46;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+
+.contour-text-label {
+  background: transparent;
+  border: none;
+}
+
+.contour-text-label span {
+  display: inline-block;
+  padding: 1px 4px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  color: #6d544d;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(125, 94, 87, 0.22);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  white-space: nowrap;
+}
+
+
+.map-widget-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: rgba(26, 26, 46, 0.9);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  display: none;
+}
+
+.widgets-collapsed #weather-widget,
+.widgets-collapsed #sun-indicator {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .map-widget-toggle {
+    display: block;
+  }
+
+  #weather-widget,
+  #sun-indicator {
+    right: 8px;
+  }
+}
+
+  </style>
+</head>
+
+<body>
+
+  <!-- Header -->
+  <header>🗺️ Vienna Elevation Router</header>
+
+  <!-- Loading indicator -->
+  <div id="loading">⏳ Calculating routes...</div>
+
+  <!-- Main app layout -->
+  <div id="app">
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <h2>Set Your Route</h2>
+
+      <button class="location-btn" onclick="toggleContours()">〰️ Toggle contours</button>
+
+
+      <!-- Origin input -->
+      <div class="input-group">
+        <label>📍 Origin</label>
+        <input type="text" id="origin-input" placeholder="e.g. Stephansdom, Vienna" />
+        <div id="origin-suggestions" class="suggestions"></div>
+        <button id="btn-set-origin" class="pick-btn">🖱️ Pick on map</button>
+        <button id="origin-loc-btn" class="location-btn" onclick="useMyLocation('origin')">📡 Use my current location</button>
+      </div>
+      
+
+      <!-- Destination input -->
+      <div class="input-group">
+        <label>🏁 Destination</label>
+        <input type="text" id="dest-input" placeholder="e.g. Grinzing, Vienna" />
+        <div id="dest-suggestions" class="suggestions"></div>
+        <button id="btn-set-dest" class="pick-btn">🖱️ Pick on map</button>
+        <button id="dest-loc-btn" class="location-btn" onclick="useMyLocation('destination')">📡 Use my current location</button>
+      </div>
+
+      <!-- Routing engine selector -->
+      <div class="input-group">
+        <label>⚙️ Routing Engine</label>
+        <div class="router-toggle">
+          <label class="router-option">
+            <input type="radio" name="router" value="local" checked>
+            <div>
+              <div>OSMnx</div>
+              <small>SRTM · 90m</small>
+            </div>
+          </label>
+          <label class="router-option">
+            <input type="radio" name="router" value="graphhopper">
+            <div>
+              <div>GraphHopper</div>
+              <small>Mapterhorn · 30m</small>
+            </div>
+          </label>
+        </div>
+      </div>
+
+    <div class="control-group">
+      <label>🌿 ROUTE STYLE</label>
+      <div class="style-toggle-row">
+        <label class="style-option">
+          <input type="radio" name="route-style" value="default" checked>
+          <span>Default</span>
+        </label>
+        <label class="style-option">
+          <input type="radio" name="route-style" value="park">
+          <span>Park mode</span>
+        </label>
+      </div>
+    </div>
+
+
+      <!-- Get Routes button -->
+      <button id="get-routes-btn" onclick="getRoutes()">Get Routes</button>
+
+      <!-- Take a Lap button + distance chips -->
+      <button id="lap-btn" onclick="takeLap()">🔁 Take a Lap</button>
+      <div id="lap-chips">
+        <button class="lap-chip" onclick="getLoopRoutes(2)">2 km</button>
+        <button class="lap-chip" onclick="getLoopRoutes(5)">5 km</button>
+        <button class="lap-chip" onclick="getLoopRoutes(10)">10 km</button>
+        <button class="lap-chip" onclick="getLoopRoutes(20)">20 km</button>
+        <button class="lap-chip" onclick="getLoopRoutes(30)">30 km</button>
+      </div>
+
+      <!-- Instructions shown before any routes are loaded -->
+      <p id="instructions">
+        Enter coordinates above or click on the map to set your origin and destination.
+        You will get 3 routes ranked from flattest to steepest.
+      </p>
+
+      <!-- Route cards will be inserted here dynamically -->
+      <div id="route-cards"></div>
+
+      <!-- Elevation chart will appear here after routes load -->
+      <div id="chart-container" style="display:none;">
+        <div class="chart-header">
+          <h2>📈 Elevation Profile</h2>
+          <button class="expand-profile-btn" onclick="openProfileModal()">⤢ Expand</button>
+        </div>
+        <canvas id="elevation-chart"></canvas>
+      </div>
+            <!-- Pace & Effort Calculator -->
+      <div id="pace-calculator" style="display:none">
+        <h2>🧮 Effort Calculator</h2>
+        <div class="pace-inputs">
+          <div class="pace-field">
+            <label>Pace (min/km)</label>
+            <input type="text" id="pace-input" placeholder="6:00" value="6:00" />
+          </div>
+          <div class="pace-field">
+            <label>Weight (kg)</label>
+            <input type="number" id="weight-input" placeholder="70" value="70" min="40" max="150" />
+          </div>
+          <button class="calc-btn" onclick="calculateEffort()">Calculate</button>
+        </div>
+        <div class="calc-results" id="calc-results"></div>
+      </div>
+
+
+    </div>
+
+        <!-- Weather Widget — floating on map -->
+    <div id="weather-widget">
+      <div class="weather-top">
+        <div>
+          <div class="weather-temp" id="w-temp">—</div>
+          <div class="weather-desc" id="w-desc">—</div>
+        </div>
+        <div style="font-size:2rem" id="w-icon">—</div>
+      </div>
+      <div class="weather-details">
+        <span id="w-wind">💨 —</span>
+        <span id="w-humidity">💧 —</span>
+        <span id="w-feels">🌡️ —</span>
+      </div>
+      <div class="weather-verdict" id="w-verdict"></div>
+      <button class="weather-refresh" onclick="loadWeather()">↻ refresh</button>
+    </div>
+
+<button id="weather-toggle-btn" class="map-widget-toggle" onclick="toggleWeatherSun()">
+  ☀️ Weather
+</button>
+
+
+    <!-- Sun Indicator -->
+<div id="sun-indicator">
+  <div class="sun-phase" id="sun-phase">—</div>
+  <div id="sun-compass">
+    <svg viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- compass ring -->
+      <circle cx="26" cy="26" r="24" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+      <!-- N/S/E/W labels -->
+      <text x="26" y="7"  text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="5">N</text>
+      <text x="26" y="49" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="5">S</text>
+      <text x="48" y="28" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="5">E</text>
+      <text x="4"  y="28" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="5">W</text>
+      <!-- sun arrow — rotates via JS -->
+      <g id="sun-arrow" transform="rotate(0, 26, 26)">
+        <circle cx="26" cy="11" r="5" fill="#ffd54f" opacity="0.95"/>
+        <line x1="26" y1="16" x2="26" y2="26" stroke="#ffd54f" stroke-width="1.5" opacity="0.6"/>
+      </g>
+    </svg>
+  </div>
+  <div class="sun-label" id="sun-detail">—</div>
+</div>
+
+
+    <!-- Map -->
+    <div id="map"></div>
+
+  </div>
+
+  <!-- Navigation panel — fixed at the bottom when navigating -->
+  <div id="nav-panel">
+    <button id="nav-controls-btn" onclick="toggleNavControls()">▲ Show controls</button>
+    <div class="nav-header">
+      <span id="nav-route-name">FLATTEST</span>
+      <span id="nav-status">✅ On route</span>
+      <button id="nav-stop-btn" onclick="stopNavigation()">✕ Stop</button>
+    </div>
+    <div class="nav-stats">
+      <div class="nav-stat">
+        <span id="nav-distance">—</span>
+        <small>remaining</small>
+      </div>
+      <div class="nav-stat">
+        <span id="nav-eta">—</span>
+        <small>ETA</small>
+      </div>
+      <div class="nav-stat">
+        <span id="nav-speed">—</span>
+        <small>speed</small>
+      </div>
+      <div class="nav-stat">
+        <span id="nav-elapsed">0:00</span>
+        <small>elapsed</small>
+      </div>
+      <div class="nav-stat">
+        <span id="nav-pace">—</span>
+        <small>avg pace</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS — the map library -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // -------------------------------------------------------------------------
+    // Configuration
+    // -------------------------------------------------------------------------
+
+    // The URL of our FastAPI backend
+    const API_URL = "";
+
+    // Colours for each route profile on the map
+    const PROFILE_COLORS = {
+      flattest: "#4caf50",  // Green
+      balanced: "#ff9800",  // Orange
+      steepest: "#e91e63",  // Pink/Red
+    };
+
+    // -------------------------------------------------------------------------
+    // Map setup
+    // -------------------------------------------------------------------------
+
+    // Create the Leaflet map centered on Vienna's inner city
+    const map = L.map("map").setView([48.2082, 16.3738], 11);
+
+    // Add CartoDB tiles as the base layer (no referer restriction)
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution: "© OpenStreetMap contributors © CARTO",
+    }).addTo(map);
+
+    
+
+    // Fetch and display Vienna's boundary from Nominatim
+    fetch("https://nominatim.openstreetmap.org/search?q=Vienna,Austria&format=json&polygon_geojson=1&limit=1")
+      .then(res => res.json())
+      .then(data => {
+        if (data[0] && data[0].geojson) {
+          L.geoJSON(data[0].geojson, {
+            style: {
+              color: "#1a1a2e",      // Dark blue border
+              weight: 2,             // Border thickness
+              opacity: 0.8,
+              fill: false,           // No fill — just the outline
+            }
+          }).addTo(map);
+        }
+      })
+      .catch(err => console.error("Could not load Vienna boundary:", err));
+
+    // -------------------------------------------------------------------------
+    // State variables — keep track of what's on the map
+    // -------------------------------------------------------------------------
+
+    let originMarker = null;      // The origin pin on the map
+    let destMarker = null;        // The destination pin on the map
+    let routeLayers = [];         // The route lines drawn on the map
+    let elevationChart = null;    // The Chart.js chart instance
+    // let clickMode = "origin";     // Whether the next map click sets origin or destination
+    let currentRoutes = [];       // The routes returned by the API
+
+    let expandedElevationChart = null;
+    let selectedRouteIndex = 0;
+
+    // Navigation state
+    let isNavigating = false;
+    let navRouteIndex = null;
+    let navWatchId = null;
+    let navCompletedLayer = null;
+    let navRemainingLayer = null;
+
+    // Last known heading — persists when device is stationary (heading becomes null)
+    let lastHeading = 0;
+
+let contourLayer = null;
+let contourLabelsLayer = null;
+let contoursLoaded = false;
+
+function loadContours() {
+  fetch("/static/contours_wgs84.geojson")
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status} while loading contours`);
+      return res.json();
+    })
+    .then(data => {
+      if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+        throw new Error("Invalid GeoJSON object.");
+      }
+
+      contourLayer = L.geoJSON(data, {
+        style: feature => {
+          const elev = Number(feature.properties?.ELEV ?? 0);
+          const major = elev % 50 === 0;
+          return {
+            color: "#7b5e57",
+            weight: major ? 1.5 : 0.7,
+            opacity: major ? 0.8 : 0.35
+          };
+        }
+      });
+
+      contourLabelsLayer = L.layerGroup();
+
+      data.features.forEach(feature => {
+        const elev = Number(feature.properties?.ELEV ?? 0);
+        if (elev % 50 !== 0) return;
+
+        const geom = feature.geometry;
+        if (!geom) return;
+
+        let coord = null;
+
+        if (geom.type === "LineString" && geom.coordinates.length > 0) {
+          coord = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+        } else if (geom.type === "MultiLineString" && geom.coordinates.length > 0) {
+          const line = geom.coordinates[0];
+          if (line && line.length > 0) {
+            coord = line[Math.floor(line.length / 2)];
+          }
+        }
+
+        if (!coord) return;
+
+        const [lng, lat] = coord;
+
+        const marker = L.marker([lat, lng], {
+          interactive: false,
+          icon: L.divIcon({
+            className: "contour-text-label",
+            html: `<span>${elev} m</span>`,
+            iconSize: [44, 16],
+            iconAnchor: [22, 8]
+          })
+        });
+
+        contourLabelsLayer.addLayer(marker);
+      });
+
+      contoursLoaded = true;
+      contourLayer.addTo(map);
+
+      if (map.getZoom() >= 13) {
+        contourLabelsLayer.addTo(map);
+      }
+
+      map.on("zoomend", updateContourLabelsVisibility);
+    })
+    .catch(err => {
+      console.error("Contour load error:", err);
+    });
+}
+
+function updateContourLabelsVisibility() {
+  if (!contoursLoaded || !contourLabelsLayer) return;
+
+  if (map.getZoom() >= 13) {
+    if (!map.hasLayer(contourLabelsLayer)) contourLabelsLayer.addTo(map);
+  } else {
+    if (map.hasLayer(contourLabelsLayer)) map.removeLayer(contourLabelsLayer);
+  }
+}
+
+function toggleContours() {
+  if (!contoursLoaded) {
+    loadContours();
+    return;
+  }
+
+  const linesVisible = contourLayer && map.hasLayer(contourLayer);
+  const labelsVisible = contourLabelsLayer && map.hasLayer(contourLabelsLayer);
+
+  if (linesVisible || labelsVisible) {
+    if (contourLayer) map.removeLayer(contourLayer);
+    if (contourLabelsLayer) map.removeLayer(contourLabelsLayer);
+    return;
+  }
+
+  if (contourLayer) contourLayer.addTo(map);
+  updateContourLabelsVisibility();
+}
+
+    // -------------------------------------------------------------------------
+    // Map click handler — set origin or destination by clicking the map
+    // -------------------------------------------------------------------------
+
+// По умолчанию карта НЕ слушает клики для точек
+let clickMode = null; // null = неактивен
+
+map.on("click", function (e) {
+  if (!clickMode) return; // игнорируем клик если режим не активирован
+
+  const lat = e.latlng.lat.toFixed(6);
+  const lon = e.latlng.lng.toFixed(6);
+
+  if (clickMode === "origin") {
+    document.getElementById("origin-input").value = `${lat}, ${lon}`;
+    if (originMarker) map.removeLayer(originMarker);
+    originMarker = L.marker([lat, lon], {
+      icon: L.divIcon({ className: "", html: "🟢", iconSize: [24, 24] })
+    }).addTo(map).bindPopup("Origin").openPopup();
+    loadWeather(); // refresh weather for new origin location
+    updateSun()
+
+  } else if (clickMode === "destination") {
+    document.getElementById("dest-input").value = `${lat}, ${lon}`;
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker([lat, lon], {
+      icon: L.divIcon({ className: "", html: "🔴", iconSize: [24, 24] })
+    }).addTo(map).bindPopup("Destination").openPopup();
+  }
+
+  // Сбрасываем режим после одного клика
+  clickMode = null;
+  setActiveBtn(null);
+  map.getContainer().style.cursor = "";
+});
+
+fetch("/static/contours_wgs84.geojson")
+  .then(res => res.json())
+  .then(data => {
+    contourLayer = L.geoJSON(data, {
+      style: feature => ({
+        color: "#7b5e57",
+        weight: feature.properties.ELEV % 50 === 0 ? 1.6 : 0.8,
+        opacity: feature.properties.ELEV % 50 === 0 ? 0.75 : 0.45,
+      }),
+      onEachFeature: (feature, layer) => {
+        if (feature.properties?.ELEV % 50 === 0) {
+          layer.bindTooltip(`${feature.properties.ELEV} m`, {
+            permanent: false,
+            direction: "center",
+            className: "contour-label"
+          });
+        }
+      }
+    });
+
+    // не добавляем сразу, только через toggle
+  })
+  .catch(err => console.error("Contour load error:", err));
+
+
+
+// Функция подсветки активной кнопки
+function setActiveBtn(mode) {
+  document.getElementById("btn-set-origin").classList.toggle("active-pick", mode === "origin");
+  document.getElementById("btn-set-dest").classList.toggle("active-pick", mode === "destination");
+}
+
+// Кнопка "Pick Origin"
+document.getElementById("btn-set-origin").addEventListener("click", function () {
+  if (clickMode === "origin") {
+    // повторное нажатие — отмена
+    clickMode = null;
+    setActiveBtn(null);
+    map.getContainer().style.cursor = "";
+  } else {
+    clickMode = "origin";
+    setActiveBtn("origin");
+    map.getContainer().style.cursor = "crosshair";
+  }
+});
+
+// Кнопка "Pick Destination"
+document.getElementById("btn-set-dest").addEventListener("click", function () {
+  if (clickMode === "destination") {
+    clickMode = null;
+    setActiveBtn(null);
+    map.getContainer().style.cursor = "";
+  } else {
+    clickMode = "destination";
+    setActiveBtn("destination");
+    map.getContainer().style.cursor = "crosshair";
+  }
+});
+
+    // -------------------------------------------------------------------------
+    // Real-time location — shows the user's current position on the map
+    // -------------------------------------------------------------------------
+
+    // This marker shows the user's live location on the map
+    let myLocationMarker = null;
+    let myLocationCircle = null;
+
+    // Creates a blue arrow marker rotated to face the direction of travel
+    function makeLocationArrow(lat, lon, heading) {
+      const icon = L.divIcon({
+        className: "",
+        html: `<svg width="28" height="28" viewBox="0 0 28 28"
+                 style="transform:rotate(${heading}deg);filter:drop-shadow(0 1px 3px rgba(0,0,0,0.35))">
+                 <polygon points="14,2 26,26 14,20 2,26"
+                   fill="#4a90d9" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+               </svg>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+      return L.marker([lat, lon], { icon });
+    }
+
+    // Start watching the user's location as soon as the page loads
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(
+        position => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+          const heading = position.coords.heading;
+
+          // Keep last heading when stationary (heading is null while not moving)
+          if (heading !== null && !isNaN(heading)) lastHeading = heading;
+
+          if (myLocationMarker) map.removeLayer(myLocationMarker);
+          if (myLocationCircle) map.removeLayer(myLocationCircle);
+
+          myLocationMarker = makeLocationArrow(lat, lon, lastHeading)
+            .addTo(map).bindPopup("You are here");
+
+          // Accuracy radius circle stays as before
+          myLocationCircle = L.circle([lat, lon], {
+            radius: Math.min(accuracy, 150),
+            color: "#4a90d9",
+            fillColor: "#4a90d9",
+            fillOpacity: 0.1,
+            weight: 1,
+          }).addTo(map);
+        },
+        error => {
+          console.warn("Geolocation error:", error.message);
+        },
+        {
+          enableHighAccuracy: false, // Network location — fast and reliable on laptops
+          maximumAge: 15000,         // Accept cached position up to 15 seconds old
+          timeout: 10000,
+        }
+      );
+    }
+
+
+
+
+    // Called when user clicks "Use my current location" button
+    function useMyLocation(type) {
+      if (!("geolocation" in navigator)) {
+        alert("Geolocation is not supported by your browser.");
+        return;
+      }
+
+      // Find the button that was clicked and show a loading state
+      const btnId = type === "origin" ? "origin-loc-btn" : "dest-loc-btn";
+      const btn = document.getElementById(btnId);
+      const originalText = btn.textContent;
+      btn.textContent = "📡 Getting location…";
+      btn.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          if (type === "origin") {
+            originCoords = { lat, lon };
+            document.getElementById("origin-input").value = "My current location";
+            if (originMarker) map.removeLayer(originMarker);
+            originMarker = L.marker([lat, lon], {
+              icon: L.divIcon({ className: "", html: "🟢", iconSize: [24, 24] })
+            }).addTo(map).bindPopup("Origin — your location").openPopup();
+          } else {
+            destCoords = { lat, lon };
+            document.getElementById("dest-input").value = "My current location";
+            if (destMarker) map.removeLayer(destMarker);
+            destMarker = L.marker([lat, lon], {
+              icon: L.divIcon({ className: "", html: "🔴", iconSize: [24, 24] })
+            }).addTo(map).bindPopup("Destination — your location").openPopup();
+          }
+
+          map.setView([lat, lon], 15);
+        },
+        error => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+
+          const messages = {
+            1: "Location access was denied. Click the lock icon in your browser's address bar to allow it.",
+            2: "Your location could not be determined. Check that location services are enabled on your device.",
+            3: "Location request timed out. Please try again.",
+          };
+          alert(messages[error.code] || "Could not get your location.");
+        },
+        // enableHighAccuracy: false uses network/IP location — much faster and reliable enough for routing
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Address search — converts a place name to coordinates using Nominatim
+    // -------------------------------------------------------------------------
+
+    // Store the selected coordinates for origin and destination
+    let originCoords = null;
+    let destCoords = null;
+
+    async function searchAddress(query, suggestionsId, coordsSetter, markerId) {
+      // Don't search if the query is too short
+      if (query.length < 3) {
+        document.getElementById(suggestionsId).style.display = "none";
+        return;
+      }
+
+      try {
+        // Call the Nominatim geocoding API
+        // We bias results towards Vienna by adding "Vienna" to the query
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ", Vienna")}&format=json&limit=5`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        const results = await response.json();
+
+        // Show the suggestions dropdown
+        const container = document.getElementById(suggestionsId);
+        container.innerHTML = "";
+
+        if (results.length === 0) {
+          container.style.display = "none";
+          return;
+        }
+
+        container.style.display = "block";
+
+        // Create a suggestion item for each result
+        results.forEach(result => {
+          const item = document.createElement("div");
+          item.className = "suggestion-item";
+          item.textContent = result.display_name;
+
+          item.onclick = () => {
+            // When clicked, set the coordinates and update the input field
+            const lat = parseFloat(result.lat);
+            const lon = parseFloat(result.lon);
+            coordsSetter({ lat, lon });
+
+            // Show a short version of the address in the input
+            document.getElementById(
+              suggestionsId === "origin-suggestions" ? "origin-input" : "dest-input"
+            ).value = result.display_name.split(",").slice(0, 2).join(",");
+
+            // Hide the suggestions
+            container.style.display = "none";
+
+            // Place a marker on the map
+            if (markerId === "origin") {
+              if (originMarker) map.removeLayer(originMarker);
+              originMarker = L.marker([lat, lon], {
+                icon: L.divIcon({ className: "", html: "🟢", iconSize: [24, 24] })
+              }).addTo(map).bindPopup("Origin").openPopup();
+            } else {
+              if (destMarker) map.removeLayer(destMarker);
+              destMarker = L.marker([lat, lon], {
+                icon: L.divIcon({ className: "", html: "🔴", iconSize: [24, 24] })
+              }).addTo(map).bindPopup("Destination").openPopup();
+            }
+          };
+
+          container.appendChild(item);
+        });
+
+      } catch (err) {
+        console.error("Geocoding error:", err);
+      }
+    }
+
+    // Attach event listeners to the input fields
+    // Search triggers after the user stops typing for 400ms
+    let originTimer, destTimer;
+
+    document.getElementById("origin-input").addEventListener("input", e => {
+      clearTimeout(originTimer);
+      originCoords = null;  // Reset coords when user starts typing a new address
+      originTimer = setTimeout(() => {
+        searchAddress(e.target.value, "origin-suggestions", c => originCoords = c, "origin");
+      }, 400);
+    });
+
+    document.getElementById("dest-input").addEventListener("input", e => {
+      clearTimeout(destTimer);
+      destCoords = null;  // Reset coords when user starts typing a new address
+      destTimer = setTimeout(() => {
+        searchAddress(e.target.value, "dest-suggestions", c => destCoords = c, "dest");
+      }, 400);
+    });
+    // -------------------------------------------------------------------------
+    // Get Routes — called when the user clicks the "Get Routes" button
+    // -------------------------------------------------------------------------
+
+    async function getRoutes() {
+      let origin_lat, origin_lon, dest_lat, dest_lon;
+
+      if (originCoords) {
+        origin_lat = originCoords.lat;
+        origin_lon = originCoords.lon;
+      } else {
+        const originVal = document.getElementById("origin-input").value.split(",");
+        if (originVal.length < 2) {
+          alert("Please enter or search for an origin location.");
+          return;
+        }
+        origin_lat = parseFloat(originVal[0]);
+        origin_lon = parseFloat(originVal[1]);
+      }
+
+      if (destCoords) {
+        dest_lat = destCoords.lat;
+        dest_lon = destCoords.lon;
+      } else {
+        const destVal = document.getElementById("dest-input").value.split(",");
+        if (destVal.length < 2) {
+          alert("Please enter or search for a destination location.");
+          return;
+        }
+        dest_lat = parseFloat(destVal[0]);
+        dest_lon = parseFloat(destVal[1]);
+      }
+
+      document.getElementById("loading").style.display = "block";
+
+      try {
+
+        const response = await fetch(`${API_URL}/routes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin_lat, origin_lon, dest_lat, dest_lon,
+            router: document.querySelector('input[name="router"]:checked').value,
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert("Error: " + err.detail);
+          return;
+        }
+
+        const data = await response.json();
+        currentRoutes = data.routes;
+
+        drawRoutes(currentRoutes);
+        renderRouteCards(currentRoutes);
+        renderElevationChart(currentRoutes[0]);
+
+      } catch (err) {
+        alert("Could not connect to the backend. Make sure the server is running.");
+        console.error(err);
+      } finally {
+        document.getElementById("loading").style.display = "none";
+      }
+    }
+
+    function takeLap() {
+      const chips = document.getElementById("lap-chips");
+      const isOpen = chips.style.display === "flex";
+      chips.style.display = isOpen ? "none" : "flex";
+      document.getElementById("lap-btn").classList.toggle("active", !isOpen);
+    }
+
+    async function getLoopRoutes(km) {
+      let origin_lat, origin_lon;
+
+      if (originCoords) {
+        origin_lat = originCoords.lat;
+        origin_lon = originCoords.lon;
+      } else {
+        const originVal = document.getElementById("origin-input").value.split(",");
+        if (originVal.length < 2) {
+          alert("Please set an origin location first.");
+          return;
+        }
+        origin_lat = parseFloat(originVal[0]);
+        origin_lon = parseFloat(originVal[1]);
+      }
+
+      document.getElementById("lap-chips").style.display = "none";
+      document.getElementById("lap-btn").classList.remove("active");
+      document.getElementById("loading").style.display = "block";
+
+      try {
+
+        const response = await fetch(`${API_URL}/routes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin_lat, origin_lon,
+            router: document.querySelector('input[name="router"]:checked').value,
+            mode: "loop",
+            loop_distance_km: km,
+
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert("Error: " + err.detail);
+          return;
+        }
+
+        const data = await response.json();
+        currentRoutes = data.routes;
+
+        drawRoutes(currentRoutes);
+        renderRouteCards(currentRoutes);
+        renderElevationChart(currentRoutes[0]);
+
+      } catch (err) {
+        alert("Could not connect to the backend. Make sure the server is running.");
+        console.error(err);
+      } finally {
+        document.getElementById("loading").style.display = "none";
+      }
+    }
+
+
+    // -------------------------------------------------------------------------
+    // Draw route lines on the map
+    // -------------------------------------------------------------------------
+
+    function drawRoutes(routes) {
+      // Remove any previously drawn routes
+      routeLayers.forEach(layer => map.removeLayer(layer));
+      routeLayers = [];
+
+      routes.forEach((route, index) => {
+        // Convert [lon, lat] coordinates to Leaflet's [lat, lon] format
+        const latLngs = route.coordinates.map(c => [c[1], c[0]]);
+
+        // Offset each route slightly so they don't overlap
+        // index 0 = no offset, index 1 = slight left, index 2 = slight right
+        const offsets = [0, -0.00003, 0.00003];
+        const offsetLatLngs = latLngs.map(([lat, lon]) => [
+          lat + offsets[index],
+          lon + offsets[index],
+        ]);
+
+        // Draw the route as a coloured polyline on the map
+        const layer = L.polyline(offsetLatLngs, {
+          color: PROFILE_COLORS[route.profile],
+          weight: index === 0 ? 6 : 4,
+          opacity: index === 0 ? 1.0 : 0.5,
+        }).addTo(map);
+
+        // Show route info when the user clicks on the line
+        layer.bindPopup(`
+          <b>${route.profile.toUpperCase()}</b><br>
+          Distance: ${(route.distance_m / 1000).toFixed(2)} km<br>
+          Elevation gain: ${route.elevation_gain_m} m ↑<br>
+          Elevation loss: ${route.elevation_loss_m} m ↓
+        `);
+
+        routeLayers.push(layer);
+      });
+
+      // Zoom the map to fit all routes
+      if (routeLayers.length > 0) {
+        const group = L.featureGroup(routeLayers);
+        map.fitBounds(group.getBounds(), { padding: [40, 40] });
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Render route cards in the sidebar
+    // -------------------------------------------------------------------------
+
+// GPX генератор
+function generateGPX(route, label) {
+  const now = new Date().toISOString();
+  const trkpts = route.coordinates.map((coord, i) => {
+    const elev = route.elevation_profile[i]?.elevation ?? 0;
+    return `    <trkpt lat="${coord[1]}" lon="${coord[0]}"><ele>${elev}</ele></trkpt>`;
+  }).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Vienna Elevation Router"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><time>${now}</time></metadata>
+  <trk>
+    <name>Vienna Route - ${label}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
+
+// Скачать GPX файл
+function downloadGPX(routeIndex) {
+  const route = currentRoutes[routeIndex];
+  const label = route.profile.charAt(0).toUpperCase() + route.profile.slice(1);
+  const gpx = generateGPX(route, label);
+  const blob = new Blob([gpx], { type: "application/gpx+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `vienna-${route.profile}-${(route.distance_m / 1000).toFixed(1)}km.gpx`;
+  a.click();
+}
+
+// Обновлённый renderRouteCards
+function renderRouteCards(routes) {
+  document.getElementById("instructions").style.display = "none";
+  const container = document.getElementById("route-cards");
+  container.innerHTML = "";
+
+  const emojis = { flattest: "🟢", balanced: "🟡", steepest: "🔴" };
+
+  routes.forEach((route, index) => {
+    const card = document.createElement("div");
+    card.className = `route-card ${route.profile} ${index === 0 ? "active" : ""}`;
+    card.innerHTML = `
+      <h3>${emojis[route.profile]} ${route.profile}</h3>
+      <div class="stats">
+        <span>📏 Distance: ${(route.distance_m / 1000).toFixed(2)} km</span>
+        <span>⬆️ Gain: ${route.elevation_gain_m} m</span>
+        <span>⬇️ Loss: ${route.elevation_loss_m} m</span>
+      </div>
+      <div class="card-actions">
+        <button class="nav-btn" onclick="event.stopPropagation(); startNavigation(${index})">▶ Navigate</button>
+        <button class="gpx-btn" onclick="event.stopPropagation(); downloadGPX(${index})">⬇ GPX</button>
+      </div>
+    `;
+
+    card.onclick = () => selectRoute(index);
+    container.appendChild(card);
+  });
+
+  document.getElementById("pace-calculator").style.display = "block";
+
+}
+    // -------------------------------------------------------------------------
+    // Select a route — highlight it on the map and update the elevation chart
+    // -------------------------------------------------------------------------
+
+    function selectRoute(index) {
+      selectedRouteIndex = index;
+
+      routeLayers.forEach((layer, i) => {
+        layer.setStyle({
+          weight: i === index ? 6 : 3,
+          opacity: i === index ? 1.0 : 0.4,
+        });
+        if (i === index) layer.bringToFront();
+      });
+
+      document.querySelectorAll(".route-card").forEach((card, i) => {
+        card.classList.toggle("active", i === index);
+      });
+
+      renderElevationChart(currentRoutes[index]);
+    }
+    // -------------------------------------------------------------------------
+    // Render the elevation profile chart using Chart.js
+    // -------------------------------------------------------------------------
+
+    function renderElevationChart(route) {
+      // Show the chart container
+      document.getElementById("chart-container").style.display = "block";
+
+      // Extract data for the chart axes
+      const labels = route.elevation_profile.map(p => (p.distance / 1000).toFixed(2));
+      const elevations = route.elevation_profile.map(p => p.elevation);
+
+      // Destroy the previous chart instance if one exists
+      if (elevationChart) elevationChart.destroy();
+
+      const ctx = document.getElementById("elevation-chart").getContext("2d");
+      elevationChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Elevation (m)",
+            data: elevations,
+            borderColor: PROFILE_COLORS[route.profile],
+            backgroundColor: PROFILE_COLORS[route.profile] + "33", // 20% opacity fill
+            borderWidth: 2,
+            pointRadius: 0,  // Hide individual data points for a cleaner look
+            fill: true,
+            tension: 0.3,    // Slight curve to the line
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: {
+              title: { display: true, text: "Distance (km)", font: { size: 10 } },
+              ticks: { maxTicksLimit: 6, font: { size: 9 } }
+            },
+            y: {
+              title: { display: true, text: "Elevation (m)", font: { size: 10 } },
+              ticks: { font: { size: 9 } }
+            }
+          }
+        }
+      });
+    }
+
+// -------------------------------------------------------------------------
+// Navigation — turn-by-turn style tracking along a chosen route
+// -------------------------------------------------------------------------
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+          * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestIndex(coords, lat, lon) {
+  let bestIndex = 0, bestDist = Infinity;
+  coords.forEach(([cLon, cLat], i) => {
+    const d = haversineDistance(lat, lon, cLat, cLon);
+    if (d < bestDist) { bestDist = d; bestIndex = i; }
+  });
+  return { index: bestIndex, distToRoute: bestDist };
+}
+
+function calcRemainingDistance(coords, fromIndex) {
+  let dist = 0;
+  for (let i = fromIndex; i < coords.length - 1; i++) {
+    dist += haversineDistance(coords[i][1], coords[i][0], coords[i+1][1], coords[i+1][0]);
+  }
+  return dist;
+}
+
+function updateNavVisualization(routeIndex, splitIndex) {
+  const route = currentRoutes[routeIndex];
+  const color = PROFILE_COLORS[route.profile];
+
+  if (navCompletedLayer) { map.removeLayer(navCompletedLayer); navCompletedLayer = null; }
+  if (navRemainingLayer) { map.removeLayer(navRemainingLayer); navRemainingLayer = null; }
+  routeLayers.forEach(l => map.removeLayer(l));
+
+  const all = route.coordinates.map(c => [c[1], c[0]]);
+  const completed = all.slice(0, splitIndex + 1);
+  const remaining = all.slice(splitIndex);
+
+  if (completed.length > 1) {
+    navCompletedLayer = L.polyline(completed, {
+      color: "#aaa", weight: 4, opacity: 0.5, dashArray: "6 5",
+    }).addTo(map);
+  }
+  if (remaining.length > 1) {
+    navRemainingLayer = L.polyline(remaining, {
+      color, weight: 7, opacity: 1.0,
+    }).addTo(map);
+  }
+}
+
+// ── Rolling average speed ────────────────────────────────────────────────
+// Stores last N speed samples to smooth out GPS noise
+const SPEED_WINDOW = 8;
+let speedSamples = [];
+let navStartTime = null;
+let navStartDist = null;   // total route distance at start
+let navLastIndex = 0;
+let navTrackPoints = [];   // recorded [lat, lon, timestamp, ele] for export
+
+function rollingAvgSpeed(newSample) {
+  // Only push real GPS readings (> 0.3 m/s); ignore null / stale
+  if (newSample !== null && newSample > 0.3) speedSamples.push(newSample);
+  if (speedSamples.length > SPEED_WINDOW) speedSamples.shift();
+  if (speedSamples.length === 0) return 1.389; // fallback 5 km/h
+  return speedSamples.reduce((a, b) => a + b, 0) / speedSamples.length;
+}
+
+// Called on every GPS position update while navigating
+function onNavPositionUpdate(position) {
+  const { latitude: lat, longitude: lon, speed, altitude } = position.coords;
+  const route = currentRoutes[navRouteIndex];
+  const now = Date.now();
+
+  // Record track point for GPX export
+  navTrackPoints.push({ lat, lon, ts: now, ele: altitude ?? 0 });
+
+  const { index, distToRoute } = findNearestIndex(route.coordinates, lat, lon);
+  navLastIndex = index;
+  const remaining = calcRemainingDistance(route.coordinates, index);
+
+  // ── Elapsed time ──────────────────────────────────────────────────────
+  const elapsedSec = (now - navStartTime) / 1000;
+  const elapsedText = formatNavTime(elapsedSec);
+
+  // ── Rolling average speed ─────────────────────────────────────────────
+  const avgSpeedMs = rollingAvgSpeed(speed);
+  const avgSpeedKmh = avgSpeedMs * 3.6;
+
+  // ── ETA based on average speed ────────────────────────────────────────
+  const etaSec = avgSpeedMs > 0 ? remaining / avgSpeedMs : null;
+  const etaText = etaSec !== null ? formatNavTime(etaSec) : "—";
+
+  // ── Completed distance ────────────────────────────────────────────────
+  const completedDist = navStartDist - remaining;
+  const distText = remaining >= 1000
+    ? (remaining / 1000).toFixed(2) + " km"
+    : Math.round(remaining) + " m";
+
+  // ── Pace (min/km) from average speed ─────────────────────────────────
+  const paceMinKm = avgSpeedMs > 0.1 ? (1000 / avgSpeedMs) / 60 : null;
+  const paceText = paceMinKm
+    ? `${Math.floor(paceMinKm)}:${String(Math.round((paceMinKm % 1) * 60)).padStart(2,"0")} /km`
+    : "—";
+
+  // ── Update UI ─────────────────────────────────────────────────────────
+  document.getElementById("nav-distance").textContent = distText;
+  document.getElementById("nav-eta").textContent      = etaText;
+  document.getElementById("nav-speed").textContent    = avgSpeedKmh.toFixed(1) + " km/h";
+  document.getElementById("nav-elapsed").textContent  = elapsedText;
+  document.getElementById("nav-pace").textContent     = paceText;
+
+  const offRoute = distToRoute > 80;
+  const statusEl = document.getElementById("nav-status");
+  statusEl.textContent = offRoute ? "⚠️ Off route" : "✅ On route";
+  statusEl.style.color  = offRoute ? "#ff6b9d" : "#81c784";
+
+  // Auto-finish when < 40 m from last coordinate
+  const distToEnd = haversineDistance(
+    lat, lon,
+    route.coordinates[route.coordinates.length - 1][1],
+    route.coordinates[route.coordinates.length - 1][0]
+  );
+  if (distToEnd < 40) {
+    finishNavigation(completedDist, elapsedSec, avgSpeedKmh);
+    return;
+  }
+
+  updateNavVisualization(navRouteIndex, index);
+}
+
+function formatNavTime(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.round(totalSec % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+
+function startNavigation(routeIndex) {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser.");
+    return;
+  }
+  if (isNavigating) stopNavigation();
+
+  isNavigating   = true;
+  navRouteIndex  = routeIndex;
+  navStartTime   = Date.now();
+  navTrackPoints = [];
+  speedSamples   = [];
+
+  const route = currentRoutes[routeIndex];
+  navStartDist = calcRemainingDistance(route.coordinates, 0);
+
+  const profileName = route.profile.toUpperCase();
+  document.getElementById("nav-route-name").textContent = profileName + " ROUTE";
+  document.getElementById("nav-distance").textContent   = "—";
+  document.getElementById("nav-eta").textContent        = "—";
+  document.getElementById("nav-speed").textContent      = "—";
+  document.getElementById("nav-elapsed").textContent    = "0:00";
+  document.getElementById("nav-pace").textContent       = "—";
+  document.getElementById("nav-status").textContent     = "📡 Getting location…";
+  document.getElementById("nav-status").style.color     = "white";
+  document.getElementById("nav-panel").style.display    = "flex";
+  document.getElementById("app").classList.add("nav-mode");
+  document.getElementById("nav-controls-btn").textContent = "▲ Show controls";
+
+  updateNavVisualization(routeIndex, 0);
+
+  navWatchId = navigator.geolocation.watchPosition(
+    onNavPositionUpdate,
+    err => { document.getElementById("nav-status").textContent = "⚠️ Location unavailable"; },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+}
+
+function stopNavigation() {
+  if (navWatchId !== null) {
+    navigator.geolocation.clearWatch(navWatchId);
+    navWatchId = null;
+  }
+  isNavigating  = false;
+  navRouteIndex = null;
+  speedSamples  = [];
+
+  if (navCompletedLayer) { map.removeLayer(navCompletedLayer); navCompletedLayer = null; }
+  if (navRemainingLayer) { map.removeLayer(navRemainingLayer); navRemainingLayer = null; }
+
+  document.getElementById("nav-panel").style.display = "none";
+  document.getElementById("app").classList.remove("nav-mode", "controls-open");
+  document.getElementById("finish-modal").style.display = "none";
+
+  if (currentRoutes.length > 0) drawRoutes(currentRoutes);
+}
+
+function toggleNavControls() {
+  const app = document.getElementById("app");
+  const btn = document.getElementById("nav-controls-btn");
+  const open = app.classList.toggle("controls-open");
+  btn.textContent = open ? "▼ Hide controls" : "▲ Show controls";
+}
+
+// ── Finish ────────────────────────────────────────────────────────────────
+function finishNavigation(completedDist, elapsedSec, avgSpeedKmh) {
+  if (navWatchId !== null) {
+    navigator.geolocation.clearWatch(navWatchId);
+    navWatchId = null;
+  }
+  isNavigating = false;
+
+  document.getElementById("nav-panel").style.display = "none";
+  document.getElementById("app").classList.remove("nav-mode", "controls-open");
+
+  // Fill in finish modal
+  const distKm   = (completedDist / 1000).toFixed(2);
+  const timeText = formatNavTime(elapsedSec);
+  const paceMin  = avgSpeedKmh > 0 ? 60 / avgSpeedKmh : 0;
+  const paceText = `${Math.floor(paceMin)}:${String(Math.round((paceMin % 1)*60)).padStart(2,"0")} /km`;
+
+  // Estimate kcal: MET ~8 for running, 70 kg default
+  const weight = parseFloat(document.getElementById("weight-input")?.value) || 70;
+  const kcal   = Math.round(8 * weight * (elapsedSec / 3600));
+
+  document.getElementById("fin-dist").textContent  = distKm + " km";
+  document.getElementById("fin-time").textContent  = timeText;
+  document.getElementById("fin-pace").textContent  = paceText;
+  document.getElementById("fin-speed").textContent = avgSpeedKmh.toFixed(1) + " km/h";
+  document.getElementById("fin-kcal").textContent  = kcal + " kcal";
+
+  document.getElementById("finish-modal").style.display = "flex";
+}
+
+// ── GPX Export ────────────────────────────────────────────────────────────
+function exportGPX() {
+  const route = currentRoutes[navRouteIndex ?? 0];
+  const name  = route ? route.profile : "run";
+
+  const trkpts = navTrackPoints.map(p => {
+    const isoTime = new Date(p.ts).toISOString();
+    return `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}">
+      <ele>${p.ele.toFixed(1)}</ele>
+      <time>${isoTime}</time>
+    </trkpt>`;
+  }).join("\n");
+
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Vienna Elevation Router"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${name}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+  downloadBlob(gpx, `run_${name}_${datestamp()}.gpx`, "application/gpx+xml");
+}
+
+// ── JSON Export ───────────────────────────────────────────────────────────
+function exportJSON() {
+  const route = currentRoutes[navRouteIndex ?? 0];
+  const data  = {
+    profile:    route?.profile ?? "unknown",
+    date:       new Date().toISOString(),
+    distance_km: parseFloat(document.getElementById("fin-dist").textContent),
+    time:       document.getElementById("fin-time").textContent,
+    avg_pace:   document.getElementById("fin-pace").textContent,
+    avg_speed_kmh: parseFloat(document.getElementById("fin-speed").textContent),
+    kcal:       parseInt(document.getElementById("fin-kcal").textContent),
+    track:      navTrackPoints.map(p => ({
+      lat: p.lat, lon: p.lon, ele: p.ele,
+      time: new Date(p.ts).toISOString()
+    })),
+  };
+  downloadBlob(JSON.stringify(data, null, 2), `run_${datestamp()}.json`, "application/json");
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const a    = document.createElement("a");
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function datestamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+
+    // -------------------------------------------------------------------------
+// Weather — Open-Meteo (бесплатно, без ключа)
+// -------------------------------------------------------------------------
+
+const WMO_ICONS = {
+  0:"☀️",1:"🌤️",2:"⛅",3:"☁️",
+  45:"🌫️",48:"🌫️",
+  51:"🌦️",53:"🌦️",55:"🌧️",
+  61:"🌧️",63:"🌧️",65:"🌧️",
+  71:"❄️",73:"❄️",75:"❄️",77:"🌨️",
+  80:"🌦️",81:"🌧️",82:"⛈️",
+  85:"❄️",86:"❄️",
+  95:"⛈️",96:"⛈️",99:"⛈️",
+};
+
+const WMO_DESC = {
+  0:"Clear sky",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",
+  45:"Foggy",48:"Icy fog",
+  51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",
+  61:"Light rain",63:"Rain",65:"Heavy rain",
+  71:"Light snow",73:"Snow",75:"Heavy snow",77:"Snow grains",
+  80:"Light showers",81:"Showers",82:"Heavy showers",
+  95:"Thunderstorm",96:"Thunderstorm+hail",99:"Heavy thunderstorm",
+};
+
+function getRunningVerdict(temp, windspeed, wmo) {
+  const isRain = [51,53,55,61,63,65,80,81,82,95,96,99].includes(wmo);
+  const isSnow = [71,73,75,77,85,86].includes(wmo);
+  const isFog  = [45,48].includes(wmo);
+
+  if (isSnow)
+    return ["verdict-bad",  "❌ Snow on roads — high slip risk. Skip or use treadmill."];
+  if (isRain && wmo >= 63)
+    return ["verdict-bad",  "🌧️ Heavy rain — poor visibility and traction. Not recommended."];
+  if (temp > 32)
+    return ["verdict-bad",  "🥵 Too hot ("+temp+"°C) — risk of heat stroke. Run early morning only."];
+  if (temp < -5)
+    return ["verdict-bad",  "🥶 Too cold ("+temp+"°C) — ice risk and lung strain. Stay inside."];
+  if (windspeed > 40)
+    return ["verdict-bad",  "💨 Strong wind ("+windspeed+" km/h) — hard headwind, unstable footing."];
+  if (isRain && wmo < 63)
+    return ["verdict-ok",   "🌦️ Light rain — manageable with a jacket. Shorten if needed."];
+  if (isFog)
+    return ["verdict-ok",   "🌫️ Foggy — low visibility. Stay on familiar routes."];
+  if (windspeed > 25)
+    return ["verdict-ok",   "💨 Windy ("+windspeed+" km/h) — plan your route into wind first, with it on return."];
+  if (temp > 26)
+    return ["verdict-ok",   "☀️ Warm — bring water, prefer shaded routes (park mode)."];
+  if (temp >= 8 && temp <= 18 && windspeed < 20 && !isRain)
+    return ["verdict-great","🏃 Perfect running conditions! Great time to head out."];
+  if (temp >= 4 && temp < 8)
+    return ["verdict-ok",   "🧤 Cool but fine — wear gloves and warm up well."];
+  return ["verdict-ok",     "✅ Decent conditions — go for it."];
+}
+
+async function loadWeather() {
+  // Use Vienna center as default; use origin marker if set
+  let lat = 48.2082, lon = 16.3738;
+  if (originMarker) {
+    const ll = originMarker.getLatLng();
+    lat = ll.lat; lon = ll.lng;
+  }
+
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+      + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code`
+      + `&wind_speed_unit=kmh&timezone=auto`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Weather fetch failed");
+    const data = await res.json();
+    const c = data.current;
+
+    const temp    = Math.round(c.temperature_2m);
+    const feels   = Math.round(c.apparent_temperature);
+    const wind    = Math.round(c.wind_speed_10m);
+    const humid   = c.relative_humidity_2m;
+    const wmo     = c.weather_code;
+
+    document.getElementById("w-temp").textContent     = temp + "°C";
+    document.getElementById("w-desc").textContent     = WMO_DESC[wmo] ?? "Unknown";
+    document.getElementById("w-icon").textContent     = WMO_ICONS[wmo] ?? "🌡️";
+    document.getElementById("w-wind").textContent     = "💨 " + wind + " km/h";
+    document.getElementById("w-humidity").textContent = "💧 " + humid + "%";
+    document.getElementById("w-feels").textContent    = "🌡️ feels " + feels + "°C";
+
+    const [cls, msg] = getRunningVerdict(temp, wind, wmo);
+    const verdict = document.getElementById("w-verdict");
+    verdict.className = "weather-verdict " + cls;
+    verdict.textContent = msg;
+
+    document.getElementById("weather-widget").classList.add("loaded");
+  } catch (e) {
+    console.warn("Weather error:", e);
+  }
+}
+
+// Load weather on startup + refresh when origin marker is set
+loadWeather();
+if (window.innerWidth <= 768) {
+  document.body.classList.add("widgets-collapsed");
+  const btn = document.getElementById("weather-toggle-btn");
+  if (btn) btn.textContent = "☀️ Show widgets";
+}
+
+// -------------------------------------------------------------------------
+// Effort Calculator — Grade Adjusted Pace, Calories, Splits
+// -------------------------------------------------------------------------
+
+// Minetti et al. correction factor for grade
+// g = grade as decimal (0.1 = 10% slope)
+function gradeMultiplier(g) {
+  // Polynomial fit from Minetti 2002, clamped to ±30%
+  g = Math.max(-0.30, Math.min(0.30, g));
+  // Uphill costs more, downhill has a sweet spot around -8%
+  return 1 + 4.5 * g + 19.5 * g * g - 32 * g * g * g - 76.6 * g * g * g * g;
+}
+
+function parsePace(str) {
+  // Accept "6:00" or "6.0" → returns decimal minutes per km
+  str = str.trim();
+  if (str.includes(":")) {
+    const [m, s] = str.split(":").map(Number);
+    return m + (s || 0) / 60;
+  }
+  return parseFloat(str);
+}
+
+function formatTime(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.round(totalSeconds % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s.toString().padStart(2,"0")}s`;
+}
+
+function formatPace(minPerKm) {
+  const m = Math.floor(minPerKm);
+  const s = Math.round((minPerKm - m) * 60);
+  return `${m}:${s.toString().padStart(2,"0")} /km`;
+}
+
+function calculateEffort() {
+  if (!currentRoutes.length) return;
+
+  const paceMin = parsePace(document.getElementById("pace-input").value);
+  const weight  = parseFloat(document.getElementById("weight-input").value) || 70;
+
+  if (isNaN(paceMin) || paceMin <= 0) {
+    alert("Enter a valid pace, e.g. 6:00");
+    return;
+  }
+
+  const container = document.getElementById("calc-results");
+  container.innerHTML = "";
+
+  currentRoutes.forEach((route, idx) => {
+    const profile = route.elevation_profile; // [{distance, elevation}, ...]
+    if (!profile || profile.length < 2) return;
+
+    let totalAdjustedTime = 0; // seconds
+    let totalKcal = 0;
+    let flatEquivalentDist = 0;
+    const splits = []; // per-km breakdown
+
+    let kmStart = 0;
+    let kmElev  = profile[0].elevation;
+    let kmAdjTime = 0;
+
+    for (let i = 1; i < profile.length; i++) {
+      const segDist = profile[i].distance - profile[i-1].distance; // metres
+      const elevDiff = profile[i].elevation - profile[i-1].elevation;
+      const grade = segDist > 0 ? elevDiff / segDist : 0;
+
+      const mult   = gradeMultiplier(grade);
+      const adjPace = paceMin * mult;           // min/km adjusted
+      const segTime = (segDist / 1000) * adjPace * 60; // seconds
+
+      // MET scales with speed and grade
+      const speedKmh = 60 / adjPace;
+      const met = Math.min(18, 2.5 + speedKmh * 0.9 + Math.max(0, grade) * 15);
+      const segHours = segTime / 3600;
+      totalKcal += met * weight * segHours;
+
+      flatEquivalentDist += (segDist / 1000) * mult;
+      totalAdjustedTime  += segTime;
+      kmAdjTime += segTime;
+
+      // Record split every ~1km
+      const currentKm = profile[i].distance / 1000;
+      if (currentKm - kmStart >= 1.0 || i === profile.length - 1) {
+        const splitGrade = (profile[i].elevation - kmElev) / ((currentKm - kmStart) * 1000);
+        splits.push({
+          km:    Math.ceil(currentKm),
+          time:  formatTime(kmAdjTime),
+          pace:  formatPace(kmAdjTime / 60 / Math.max(0.01, currentKm - kmStart)),
+          grade: (splitGrade * 100).toFixed(1),
+          elev:  Math.round(profile[i].elevation),
+        });
+        kmStart   = currentKm;
+        kmElev    = profile[i].elevation;
+        kmAdjTime = 0;
+      }
+    }
+
+    const avgAdjPace = (totalAdjustedTime / 60) / (route.distance_m / 1000);
+
+    // Build block HTML
+    const block = document.createElement("div");
+    block.className = `calc-route-block ${route.profile}`;
+
+    const splitsId = `splits-${idx}`;
+    block.innerHTML = `
+      <div class="calc-route-title">${route.profile} — ${(route.distance_m/1000).toFixed(1)} km</div>
+      <div class="calc-stats-grid">
+        <div class="calc-stat">⏱️ Time: <strong>${formatTime(totalAdjustedTime)}</strong></div>
+        <div class="calc-stat">🔥 Calories: <strong>${Math.round(totalKcal)} kcal</strong></div>
+        <div class="calc-stat">📐 Avg pace: <strong>${formatPace(avgAdjPace)}</strong></div>
+        <div class="calc-stat">💪 Effort eq: <strong>${flatEquivalentDist.toFixed(1)} km flat</strong></div>
+      </div>
+      <button class="splits-toggle" onclick="toggleSplits('${splitsId}')">▶ Show km splits</button>
+      <table class="splits-table" id="${splitsId}">
+        <thead><tr>
+          <th>km</th><th>pace</th><th>grade</th><th>elev</th><th>time</th>
+        </tr></thead>
+        <tbody>
+          ${splits.map(s => `<tr>
+            <td>${s.km}</td>
+            <td>${s.pace}</td>
+            <td>${s.grade > 0 ? "+" : ""}${s.grade}%</td>
+            <td>${s.elev}m</td>
+            <td>${s.time}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    `;
+    container.appendChild(block);
+  });
+
+  container.classList.add("visible");
+}
+
+function toggleSplits(id) {
+  const table = document.getElementById(id);
+  const btn   = table.previousElementSibling;
+  table.classList.toggle("open");
+  btn.textContent = table.classList.contains("open")
+    ? "▼ Hide km splits"
+    : "▶ Show km splits";
+}
+
+// Show calculator once routes are loaded
+// Найди функцию где ты рендеришь route-cards и добавь туда:
+// document.getElementById("pace-calculator").style.display = "block";
+
+// -------------------------------------------------------------------------
+// Sun Indicator — SunCalc
+// -------------------------------------------------------------------------
+
+function getSunPhase(date, lat, lon) {
+  const times = SunCalc.getTimes(date, lat, lon);
+  const now = date.getTime();
+
+  if (now < times.dawn.getTime())       return ["🌑", "Night"];
+  if (now < times.sunrise.getTime())    return ["🌅", "Dawn"];
+  if (now < times.goldenHourEnd.getTime()) return ["🌄", "Golden hour"];
+  if (now < times.solarNoon.getTime())  return ["☀️", "Morning"];
+  if (now < times.goldenHour.getTime()) return ["☀️", "Afternoon"];
+  if (now < times.sunset.getTime())     return ["🌇", "Golden hour"];
+  if (now < times.dusk.getTime())       return ["🌆", "Dusk"];
+  return ["🌑", "Night"];
+}
+
+function updateSun() {
+  if (typeof SunCalc === "undefined") return;
+
+  let lat = 48.2082, lon = 16.3738;
+  if (originMarker) {
+    const ll = originMarker.getLatLng();
+    lat = ll.lat; lon = ll.lng;
+  }
+
+  const now = new Date();
+  const pos = SunCalc.getPosition(now, lat, lon);
+
+  // SunCalc azimuth: 0 = south, clockwise. Convert to north-up degrees.
+  const azimuthDeg = (pos.azimuth * 180 / Math.PI + 180 + 360) % 360;
+  const altitudeDeg = (pos.altitude * 180 / Math.PI).toFixed(1);
+  const isBelowHorizon = pos.altitude < 0;
+
+  // Rotate sun arrow
+  document.getElementById("sun-arrow").setAttribute(
+    "transform", `rotate(${azimuthDeg.toFixed(1)}, 26, 26)`
+  );
+
+  // Phase label
+  const [emoji, phase] = getSunPhase(now, lat, lon);
+  document.getElementById("sun-phase").textContent = `${emoji} ${phase}`;
+
+  // Detail: altitude + direction
+  const dir = azimuthToCardinal(azimuthDeg);
+  document.getElementById("sun-detail").innerHTML = isBelowHorizon
+    ? `Below horizon`
+    : `${altitudeDeg}° · ${dir}`;
+
+  document.getElementById("sun-indicator").classList.add("loaded");
+}
+
+function azimuthToCardinal(deg) {
+  const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+// Update immediately and every minute
+updateSun();
+setInterval(updateSun, 60_000);
+if (window.innerWidth <= 768) {
+  document.body.classList.add("widgets-collapsed");
+  const btn = document.getElementById("weather-toggle-btn");
+  if (btn) btn.textContent = "☀️ Show widgets";
+}
+
+function toggleWeatherSun() {
+  document.body.classList.toggle("widgets-collapsed");
+  const btn = document.getElementById("weather-toggle-btn");
+  const collapsed = document.body.classList.contains("widgets-collapsed");
+  btn.textContent = collapsed ? "☀️ Show widgets" : "☀️ Weather";
+}
+
+
+
+function getRouteProfileStats(route) {
+  const profile = route.elevation_profile || [];
+  if (!profile.length) return null;
+
+  const elevations = profile.map(p => p.elevation);
+  const distances  = profile.map(p => p.distance);
+
+  const minElev = Math.min(...elevations);
+  const maxElev = Math.max(...elevations);
+  const startElev = elevations[0];
+  const endElev = elevations[elevations.length - 1];
+  const totalDistKm = route.distance_m / 1000;
+
+  let steepestUp = 0;
+  let steepestDown = 0;
+  let rollingGain = 0;
+  let rollingLoss = 0;
+  let climbSegments = 0;
+  let descendSegments = 0;
+
+  for (let i = 1; i < profile.length; i++) {
+    const dDist = profile[i].distance - profile[i - 1].distance;
+    const dElev = profile[i].elevation - profile[i - 1].elevation;
+    if (dDist <= 0) continue;
+
+    const grade = (dElev / dDist) * 100;
+
+    if (dElev > 0.5) {
+      rollingGain += dElev;
+      climbSegments++;
+      if (grade > steepestUp) steepestUp = grade;
+    } else if (dElev < -0.5) {
+      rollingLoss += Math.abs(dElev);
+      descendSegments++;
+      if (grade < steepestDown) steepestDown = grade;
+    }
+  }
+
+  const verticalRange = maxElev - minElev;
+  const netChange = endElev - startElev;
+  const avgClimbPerKm = totalDistKm > 0 ? rollingGain / totalDistKm : 0;
+  const avgDescentPerKm = totalDistKm > 0 ? rollingLoss / totalDistKm : 0;
+
+  return {
+    minElev,
+    maxElev,
+    startElev,
+    endElev,
+    verticalRange,
+    netChange,
+    totalGain: route.elevation_gain_m ?? rollingGain,
+    totalLoss: route.elevation_loss_m ?? rollingLoss,
+    distanceKm: totalDistKm,
+    steepestUp,
+    steepestDown,
+    avgClimbPerKm,
+    avgDescentPerKm,
+    climbSegments,
+    descendSegments,
+  };
+}
+
+function openProfileModal() {
+  const route = currentRoutes[selectedRouteIndex] || currentRoutes[0];
+  if (!route) return;
+
+  document.getElementById("profile-modal").classList.add("open");
+  document.getElementById("profile-modal-title").textContent = `${route.profile} route — detailed profile`;
+
+  renderExpandedElevationChart(route);
+  renderExpandedProfileStats(route);
+}
+
+function closeProfileModal() {
+  document.getElementById("profile-modal").classList.remove("open");
+}
+
+function renderExpandedElevationChart(route) {
+  const labels = route.elevation_profile.map(p => (p.distance / 1000).toFixed(2));
+  const elevations = route.elevation_profile.map(p => p.elevation);
+
+  if (expandedElevationChart) expandedElevationChart.destroy();
+
+  const ctx = document.getElementById("expanded-elevation-chart").getContext("2d");
+  expandedElevationChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Elevation (m)",
+        data: elevations,
+        borderColor: PROFILE_COLORS[route.profile],
+        backgroundColor: PROFILE_COLORS[route.profile] + "22",
+        borderWidth: 2.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        fill: true,
+        tension: 0.25,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => `Distance: ${items[0].label} km`,
+            label: item => `Elevation: ${item.raw} m`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: "Distance (km)" },
+          ticks: { maxTicksLimit: 12 }
+        },
+        y: {
+          title: { display: true, text: "Elevation (m)" }
+        }
+      }
+    }
+  });
+}
+
+function renderExpandedProfileStats(route) {
+  const s = getRouteProfileStats(route);
+  if (!s) return;
+
+  const grid = document.getElementById("profile-stats-grid");
+  grid.innerHTML = `
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Distance</div>
+      <div class="profile-stat-value">${s.distanceKm.toFixed(2)} km</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Highest point</div>
+      <div class="profile-stat-value">${Math.round(s.maxElev)} m</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Lowest point</div>
+      <div class="profile-stat-value">${Math.round(s.minElev)} m</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Vertical range</div>
+      <div class="profile-stat-value">${Math.round(s.verticalRange)} m</div>
+    </div>
+
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Start elevation</div>
+      <div class="profile-stat-value">${Math.round(s.startElev)} m</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">End elevation</div>
+      <div class="profile-stat-value">${Math.round(s.endElev)} m</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Net change</div>
+      <div class="profile-stat-value">${s.netChange > 0 ? "+" : ""}${Math.round(s.netChange)} m</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Total ascent / descent</div>
+      <div class="profile-stat-value">${Math.round(s.totalGain)} / ${Math.round(s.totalLoss)} m</div>
+    </div>
+
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Steepest climb</div>
+      <div class="profile-stat-value">${s.steepestUp.toFixed(1)}%</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Steepest descent</div>
+      <div class="profile-stat-value">${s.steepestDown.toFixed(1)}%</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Avg climb per km</div>
+      <div class="profile-stat-value">${Math.round(s.avgClimbPerKm)} m/km</div>
+    </div>
+    <div class="profile-stat-card">
+      <div class="profile-stat-label">Avg descent per km</div>
+      <div class="profile-stat-value">${Math.round(s.avgDescentPerKm)} m/km</div>
+    </div>
+  `;
+
+  const btn = document.getElementById("contour-toggle");
+if (btn) {
+  btn.addEventListener("click", toggleContours);
+}
+
+  const summary = document.getElementById("profile-summary");
+  summary.innerHTML = `
+    <span class="profile-insight"><strong>Route shape:</strong> ${s.verticalRange < 25 ? "mostly flat" : s.verticalRange < 60 ? "rolling" : "noticeably hilly"}</span>
+    <span class="profile-insight"><strong>Climb load:</strong> ${Math.round(s.totalGain)} m total ascent</span>
+    <span class="profile-insight"><strong>Finish level:</strong> ${s.netChange > 0 ? "ends higher than start" : s.netChange < 0 ? "ends lower than start" : "ends at similar elevation"}</span>
+    <span class="profile-insight"><strong>Steepest section:</strong> ${Math.max(s.steepestUp, Math.abs(s.steepestDown)).toFixed(1)}%</span>
+  `;
+}
+
+document.getElementById("profile-modal").addEventListener("click", (e) => {
+  if (e.target.id === "profile-modal") closeProfileModal();
+});
+
+  </script>
+
+
+<div id="finish-modal" style="display:none; position:fixed; inset:0; z-index:2000;
+  background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+  <div style="background:#1a1a2e; color:white; border-radius:16px; padding:28px 32px;
+    max-width:320px; width:90%; display:flex; flex-direction:column; gap:14px; text-align:center;">
+    <div style="font-size:2rem">🏅</div>
+    <div style="font-size:1.2rem; font-weight:700; letter-spacing:1px">Run Complete!</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left">
+      <div><div style="font-size:1.3rem;font-weight:700" id="fin-dist">—</div><small style="opacity:.6">distance</small></div>
+      <div><div style="font-size:1.3rem;font-weight:700" id="fin-time">—</div><small style="opacity:.6">time</small></div>
+      <div><div style="font-size:1.3rem;font-weight:700" id="fin-pace">—</div><small style="opacity:.6">avg pace</small></div>
+      <div><div style="font-size:1.3rem;font-weight:700" id="fin-speed">—</div><small style="opacity:.6">avg speed</small></div>
+      <div style="grid-column:span 2"><div style="font-size:1.3rem;font-weight:700" id="fin-kcal">—</div><small style="opacity:.6">calories</small></div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:4px">
+      <button onclick="exportGPX()" style="flex:1;padding:10px;background:#4a90d9;color:white;
+        border:none;border-radius:8px;font-weight:700;cursor:pointer">⬇ GPX</button>
+      <button onclick="exportJSON()" style="flex:1;padding:10px;background:#4caf50;color:white;
+        border:none;border-radius:8px;font-weight:700;cursor:pointer">⬇ JSON</button>
+    </div>
+    <button onclick="stopNavigation()" style="padding:10px;background:rgba(255,255,255,0.1);
+      color:white;border:none;border-radius:8px;cursor:pointer">✕ Close</button>
+  </div>
+</div>
+
+
+
+<div id="profile-modal">
+  <div class="profile-modal-card">
+    <div class="profile-modal-top">
+      <div class="profile-modal-title" id="profile-modal-title">Route profile</div>
+      <button class="profile-close-btn" onclick="closeProfileModal()">✕ Close</button>
+    </div>
+
+    <div class="profile-modal-body">
+      <div id="expanded-chart-wrap">
+        <canvas id="expanded-elevation-chart"></canvas>
+      </div>
+
+      <div class="profile-stats-grid" id="profile-stats-grid"></div>
+
+      <div class="profile-summary" id="profile-summary"></div>
+    </div>
+  </div>
+</div>
+
+
+</body>
+</html>
