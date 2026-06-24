@@ -131,48 +131,6 @@
       background: #f0f7ff;
     }
 
-    /* Routing engine toggle */
-    .router-toggle {
-      display: flex;
-      gap: 8px;
-      width: 100%;
-    }
-    .router-option {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 7px 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      transition: border-color 0.2s, background 0.2s;
-    }
-    .router-option input[type="radio"] {
-      display: none;
-    }
-
-    .router-option > div {
-      min-width: 0;
-      overflow: hidden;
-      text-align: center;
-      width: 100%;
-    }
-    .router-option:has(input:checked) {
-      border-color: #4a90d9;
-      background: #f0f7ff;
-      font-weight: 600;
-    }
-    .router-option small {
-      display: block;
-      font-size: 0.72rem;
-      color: #888;
-      font-weight: 400;
-      margin-top: 1px;
-    }
-
     /* The "Get Routes" button */
     #get-routes-btn {
       background: #1a1a2e;
@@ -420,51 +378,113 @@
        Responsive — tablets and phones (≤ 768px)
     ----------------------------------------------------------------------- */
     @media (max-width: 768px) {
-      header {
-        padding: 10px 16px;
-        font-size: 1rem;
-        letter-spacing: 0.5px;
-      }
 
       /* Stack map on top, sidebar below */
       #app {
         flex-direction: column;
         height: calc(100vh - 44px);
+        position: relative;
       }
 
       /* Map takes the top 52% of the app area */
       #map {
-        flex: 0 0 52%;
-        min-height: 220px;
+        position: absolute;
+        inset: 0;
+        flex: none;
+        z-index: 0;
       }
 
       /* Sidebar fills the rest and scrolls internally */
       #sidebar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 500;
         width: 100%;
-        flex: 1;
-        min-height: 0;
-        padding: 14px 16px;
-        gap: 12px;
-        box-shadow: 0 -2px 8px rgba(0,0,0,0.1);
+        max-height: 40dvh;
+        min-height: 72px;       /* высота ручки — закрытое состояние */
+        background: white;
+        border-radius: 20px 20px 0 0;
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.18);
+        padding: 0 16px 20px;
+        overflow: hidden;
+        transition: min-height 0.3s ease, max-height 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+
       }
+
+      #sidebar::before {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: #ddd;
+        border-radius: 2px;
+        margin: 12px auto 8px;
+        flex-shrink: 0;
+      }
+
+        /* Открытый sheet */
+      #sidebar.sheet-open {
+        min-height: 40dvh;
+        overflow-y: auto;
+      }
+
+      /* Скрыть лишнее в закрытом состоянии */
+      #sidebar:not(.sheet-open) > *:not(.sheet-handle):not(.quick-bar) {
+        display: none !important;
+      }
+
+        /* Quick bar — всегда виден */
+      .quick-bar {
+        display: flex !important;
+        align-items: center;
+        gap: 8px;
+        padding: 0 0 4px;
+        flex-shrink: 0;
+      }
+
+        /* Прячем десктопные элементы */
+      #sidebar h2 { display: none; }
+      .input-group label { display: none; }
+      #instructions { display: none; }
+      .location-btn { display: none; }
+
+      /* Иконки в инпутах */
+      .input-icon { display: block; }
+      .inline-loc-btn { display: block; }
+      .input-wrapper input {
+        padding-left: 36px;
+        padding-right: 40px;
+      }
+
+      /* Кнопки компактнее */
+      #get-routes-btn {
+        padding: 10px;
+        font-size: 0.88rem;
+      }
+
+      #lap-btn {
+        padding: 8px;
+        font-size: 0.85rem;
+      }
+
 
       /* Shorter elevation chart to save space */
       #elevation-chart {
-        height: 110px;
+        height: 90px;
       }
 
-      /* Compact nav panel numbers */
-      .nav-stat span {
-        font-size: 1.4rem;
-      }
 
-      .nav-stats {
-        gap: 20px;
+        /* Route cards компактнее */
+      .route-card {
+        padding: 10px 12px;
       }
-
-      #nav-panel {
-        padding: 12px 16px 16px;
-      }
+      .route-card h3 { font-size: 0.85rem; }
+      .route-card .stats { flex-direction: row; flex-wrap: wrap; gap: 6px; }
     }
 
     /* Sidebar collapse button inside nav panel — only shown on mobile */
@@ -481,62 +501,6 @@
     }
     #nav-controls-btn:hover { background: rgba(255,255,255,0.2); }
 
-    @media (max-width: 768px) {
-      /* Sidebar slides away during navigation */
-      #sidebar {
-        transition: max-height 0.35s ease, padding-top 0.35s ease, padding-bottom 0.35s ease;
-        max-height: 9999px; /* large enough to never clip normally */
-      }
-
-      #app.nav-mode #sidebar {
-        max-height: 0;
-        padding-top: 0;
-        padding-bottom: 0;
-        overflow: hidden;
-      }
-
-      /* Map fills the full app height when sidebar is hidden */
-      #app.nav-mode #map {
-        flex: 1;
-      }
-
-      #nav-controls-btn {
-        display: block;
-      }
-
-      /* When user manually re-opens controls during nav, restore sidebar */
-      #app.nav-mode.controls-open #sidebar {
-        max-height: 9999px;
-        padding-top: 14px;
-        padding-bottom: 14px;
-      }
-
-      /* Stack router toggle vertically — side by side is too cramped on phones */
-      .router-toggle {
-        flex-direction: column;
-      }
-
-      .router-option {
-        font-size: 0.8rem;
-      }
-
-      .router-option small {
-        font-size: 0.68rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    }
-
-    /* Extra-small phones (≤ 420px) */
-    @media (max-width: 420px) {
-      /* Route card stats in a row to save vertical space */
-      .route-card .stats {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-    }
 
 /* -----------------------------------------------------------------------
    Weather Widget — floating top-right on map
@@ -617,12 +581,34 @@
 
 @media (max-width: 768px) {
   #weather-widget {
-    top: auto;
-    bottom: 80px;  /* выше nav-panel */
-    right: 8px;
-    max-width: 180px;
-    font-size: 0.9em;
+    min-width: unset;
+    max-width: 130px;
+    padding: 7px 9px;
+    gap: 4px;
+
   }
+
+
+    #weather-widget .weather-details,
+  #weather-widget .weather-verdict,
+  #weather-widget .weather-refresh,
+  #weather-widget .weather-desc {
+    display: none !important;
+  }
+
+  /* Компактный верхний ряд */
+  #weather-widget .weather-top {
+    gap: 6px;
+  }
+
+  #weather-widget .weather-temp {
+    font-size: 1.1rem;
+  }
+
+  #w-icon {
+    font-size: 1.3rem;
+  }
+
 }
 
 
@@ -825,6 +811,7 @@
 
 @media (max-width: 768px) {
   #sun-indicator {
+    display: none !important;
     bottom: 90px;
     right: 8px;
   }
@@ -1066,7 +1053,7 @@
 
 @media (max-width: 768px) {
   .map-widget-toggle {
-    display: block;
+    display: none !important;
   }
 
   #weather-widget,
@@ -1075,6 +1062,76 @@
   }
 }
 
+
+#basemap-switcher {
+  position: absolute;
+  bottom: 32px;
+  left: 12px;
+  z-index: 999;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 260px;
+}
+
+.basemap-btn {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #d0d4dc;
+  border-radius: 20px;
+  padding: 5px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.basemap-btn:hover {
+  background: #f0f7ff;
+  border-color: #4a90d9;
+}
+
+.basemap-btn.active {
+  background: #1a1a2e;
+  color: white;
+  border-color: #1a1a2e;
+}
+
+@media (max-width: 768px) {
+  #basemap-switcher {
+    top: 5px;
+    left: 50px;
+    bottom: auto;
+  }
+
+  .basemap-btn {
+    font-size: 0.7rem;
+    padding: 4px 9px;
+  }
+}
+
+/* Park selector */
+#park-selector-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+#park-selector-wrap label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+}
+#park-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  width: 100%;
+  background: white;
+}
+#park-select:focus { outline: none; border-color: #4a90d9; }
   </style>
 </head>
 
@@ -1091,6 +1148,18 @@
 
     <!-- Sidebar -->
     <div id="sidebar">
+
+            <!-- Первый дочерний элемент #sidebar -->
+      <div class="quick-bar">
+        <input type="text" id="origin-input-quick" placeholder="📍 From..." 
+              style="flex:1; padding:8px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.85rem;"
+              oninput="document.getElementById('origin-input').value=this.value; searchAddress(this.value,'origin-suggestions',c=>originCoords=c,'origin')">
+        <button onclick="toggleSheet()" 
+                style="background:#1a1a2e; color:white; border:none; padding:8px 14px; border-radius:8px; font-size:0.85rem; font-weight:600; white-space:nowrap;">
+          ☰ More
+        </button>
+      </div>
+
       <h2>Set Your Route</h2>
 
       <button class="location-btn" onclick="toggleContours()">〰️ Toggle contours</button>
@@ -1116,25 +1185,7 @@
       </div>
 
       <!-- Routing engine selector -->
-      <div class="input-group">
-        <label>⚙️ Routing Engine</label>
-        <div class="router-toggle">
-          <label class="router-option">
-            <input type="radio" name="router" value="local" checked>
-            <div>
-              <div>OSMnx</div>
-              <small>SRTM · 90m</small>
-            </div>
-          </label>
-          <label class="router-option">
-            <input type="radio" name="router" value="graphhopper">
-            <div>
-              <div>GraphHopper</div>
-              <small>Mapterhorn · 30m</small>
-            </div>
-          </label>
-        </div>
-      </div>
+    <input type="radio" name="router" value="graphhopper" checked hidden>
 
     <div class="control-group">
       <label>🌿 ROUTE STYLE</label>
@@ -1148,6 +1199,14 @@
           <span>Park mode</span>
         </label>
       </div>
+    </div>
+
+        <!-- ПОСЛЕ блока .style-toggle-row, ПЕРЕД get-routes-btn -->
+    <div id="park-selector-wrap">
+      <label>Select Park</label>
+      <select id="park-select">
+        <option value="">Loading parks...</option>
+      </select>
     </div>
 
 
@@ -1246,6 +1305,10 @@
   <div class="sun-label" id="sun-detail">—</div>
 </div>
 
+<div id="basemap-switcher">
+  <button class="basemap-btn active" data-name="🗺 Voyager" onclick="switchBasemap('🗺 Voyager')">🗺 Voyager</button>
+  <button class="basemap-btn" data-name="⬜ Light" onclick="switchBasemap('⬜ Light')">⬜ Light</button>
+</div>
 
     <!-- Map -->
     <div id="map"></div>
@@ -1310,10 +1373,61 @@
     const map = L.map("map").setView([48.2082, 16.3738], 11);
 
     // Add CartoDB tiles as the base layer (no referer restriction)
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution: "© OpenStreetMap contributors © CARTO",
-    }).addTo(map);
 
+    const basemaps = {
+  "🗺 Voyager": L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    { attribution: "© OpenStreetMap © CARTO", maxZoom: 19 }
+  ),
+  "⬜ Light": L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+    { attribution: "© OpenStreetMap © CARTO", maxZoom: 19 }
+  ),
+};
+
+let currentBasemap = basemaps["🗺 Voyager"];
+currentBasemap.addTo(map);
+
+function switchBasemap(name) {
+  if (currentBasemap) map.removeLayer(currentBasemap);
+  currentBasemap = basemaps[name];
+  currentBasemap.addTo(map);
+  currentBasemap.bringToBack();
+
+  document.querySelectorAll(".basemap-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.name === name);
+  });
+}
+
+
+// Стало — ждёт загрузки DOM
+document.addEventListener('DOMContentLoaded', () => {
+
+  document.querySelectorAll('input[name="route-style"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isPark = document.querySelector('input[name="route-style"]:checked').value === 'park';
+      document.getElementById('park-selector-wrap').style.display = isPark ? 'flex' : 'none';
+      if (isPark) loadParks();
+    });
+  });
+});
+
+// Загружает список парков с /parks endpoint
+async function loadParks() {
+  const select = document.getElementById('park-select');
+  select.innerHTML = '<option value="">Loading...</option>';
+  try {
+    const res = await fetch(API_URL + 'parks');
+    if (!res.ok) throw new Error('Failed to load parks');
+    const data = await res.json();
+    select.innerHTML = data.parks.length
+      ? data.parks.map(p => `<option value="${p}">${p.charAt(0).toUpperCase() + p.slice(1)}</option>`).join('')
+      : '<option value="">No parks available</option>';
+  } catch (e) {
+    select.innerHTML = '<option value="">Could not load parks</option>';
+    console.error('Parks load error:', e);
+  }
+}
     
 
     // Fetch and display Vienna's boundary from Nominatim
@@ -1360,6 +1474,34 @@
 let contourLayer = null;
 let contourLabelsLayer = null;
 let contoursLoaded = false;
+
+
+  function toggleSheet() {
+  document.getElementById('sidebar').classList.toggle('sheet-open');
+}
+
+// Свайп вверх открывает, вниз закрывает
+(function() {
+  const sheet = document.getElementById('sidebar');
+  let startY = 0;
+
+  sheet.addEventListener('touchstart', e => {
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  sheet.addEventListener('touchend', e => {
+    const dy = startY - e.changedTouches[0].clientY;
+    if (dy > 40) sheet.classList.add('sheet-open');      // свайп вверх
+    if (dy < -40) sheet.classList.remove('sheet-open');  // свайп вниз
+  }, { passive: true });
+})();
+
+// Открывать sheet автоматически когда пришли маршруты
+// Добавить в drawRoutes() или renderRouteCards():
+if (window.innerWidth <= 768) {
+  document.getElementById('sidebar').classList.add('sheet-open');
+}
+
 
 function loadContours() {
   fetch("/static/contours_wgs84.geojson")
@@ -1817,7 +1959,7 @@ document.getElementById("btn-set-dest").addEventListener("click", function () {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             origin_lat, origin_lon, dest_lat, dest_lon,
-            router: document.querySelector('input[name="router"]:checked').value,
+            router: 'graphhopper',
           }),
         });
 
@@ -1869,25 +2011,34 @@ document.getElementById("btn-set-dest").addEventListener("click", function () {
       document.getElementById("lap-btn").classList.remove("active");
       document.getElementById("loading").style.display = "block";
 
-      try {
 
-        const response = await fetch(`${API_URL}/routes`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            origin_lat, origin_lon,
-            router: document.querySelector('input[name="router"]:checked').value,
-            mode: "loop",
-            loop_distance_km: km,
+  // Определяем mode и park_name
+  const routeStyle = document.querySelector('input[name="route-style"]:checked')?.value;
+  const isParkMode = routeStyle === 'park';
+  const parkName = isParkMode ? document.getElementById('park-select').value : null;
 
-          }),
-        });
+  if (isParkMode && !parkName) {
+    alert('Please select a park first.');
+    document.getElementById('loading').style.display = 'none';
+    return;
+  }
 
-        if (!response.ok) {
-          const err = await response.json();
-          alert("Error: " + err.detail);
-          return;
-        }
+  try {
+    const body = {
+      origin_lat: origin_lat,
+      origin_lon: origin_lon,
+      router: 'graphhopper',
+      mode: isParkMode ? 'park_loop' : 'loop',
+      loop_distance_km: km,
+    };
+    if (isParkMode) body.park_name = parkName;
+
+    const response = await fetch(API_URL + 'routes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) { const err = await response.json(); alert('Error: ' + err.detail); return; }
 
         const data = await response.json();
         currentRoutes = data.routes;
@@ -1988,6 +2139,7 @@ function downloadGPX(routeIndex) {
   a.click();
 }
 
+
 // Обновлённый renderRouteCards
 function renderRouteCards(routes) {
   document.getElementById("instructions").style.display = "none";
@@ -2008,7 +2160,7 @@ function renderRouteCards(routes) {
       </div>
       <div class="card-actions">
         <button class="nav-btn" onclick="event.stopPropagation(); startNavigation(${index})">▶ Navigate</button>
-        <button class="gpx-btn" onclick="event.stopPropagation(); downloadGPX(${index})">⬇ GPX</button>
+        <button class="gpx-btn" onclick="event.stopPropagation(); downloadGPX(${index})">Save</button>
       </div>
     `;
 
@@ -2044,49 +2196,56 @@ function renderRouteCards(routes) {
     // Render the elevation profile chart using Chart.js
     // -------------------------------------------------------------------------
 
-    function renderElevationChart(route) {
-      // Show the chart container
-      document.getElementById("chart-container").style.display = "block";
+function renderElevationChart(route) {
+  document.getElementById("chart-container").style.display = "block";
 
-      // Extract data for the chart axes
-      const labels = route.elevation_profile.map(p => (p.distance / 1000).toFixed(2));
-      const elevations = route.elevation_profile.map(p => p.elevation);
+  // {x, y} формат для linear scale
+  const chartData = route.elevation_profile.map(p => ({
+    x: parseFloat((p.distance / 1000).toFixed(3)),
+    y: p.elevation
+  }));
 
-      // Destroy the previous chart instance if one exists
-      if (elevationChart) elevationChart.destroy();
+  const totalKm = chartData[chartData.length - 1]?.x ?? 0;
+  const stepSize = totalKm <= 3 ? 0.5 : 1.0;  // до 3км — каждые 500м, дальше — 1км
 
-      const ctx = document.getElementById("elevation-chart").getContext("2d");
-      elevationChart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: labels,
-          datasets: [{
-            label: "Elevation (m)",
-            data: elevations,
-            borderColor: PROFILE_COLORS[route.profile],
-            backgroundColor: PROFILE_COLORS[route.profile] + "33", // 20% opacity fill
-            borderWidth: 2,
-            pointRadius: 0,  // Hide individual data points for a cleaner look
-            fill: true,
-            tension: 0.3,    // Slight curve to the line
-          }]
+  if (elevationChart) elevationChart.destroy();
+
+  const ctx = document.getElementById("elevation-chart").getContext("2d");
+  elevationChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [{
+        label: "Elevation (m)",
+        data: chartData,           // ← {x, y} объекты, NO labels
+        borderColor: PROFILE_COLORS[route.profile],
+        backgroundColor: PROFILE_COLORS[route.profile] + "33",
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 0,
+          ticks: {
+            stepSize: stepSize,
+            callback: (value) => value % 1 === 0 ? value + ' km' : value.toFixed(1)
+          },
+          title: { display: true, text: "Distance (km)", font: { size: 10 } },
         },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: {
-              title: { display: true, text: "Distance (km)", font: { size: 10 } },
-              ticks: { maxTicksLimit: 6, font: { size: 9 } }
-            },
-            y: {
-              title: { display: true, text: "Elevation (m)", font: { size: 10 } },
-              ticks: { font: { size: 9 } }
-            }
-          }
+        y: {
+          title: { display: true, text: "Elevation (m)", font: { size: 10 } },
+          ticks: { font: { size: 9 } }
         }
-      });
+      }
     }
+  });
+}
 
 // -------------------------------------------------------------------------
 // Navigation — turn-by-turn style tracking along a chosen route
@@ -2480,15 +2639,18 @@ async function loadWeather() {
   } catch (e) {
     console.warn("Weather error:", e);
   }
+
+  if (window.innerWidth <= 768) {
+  loadWeather();  // загрузить данные
+  document.getElementById('weather-widget').classList.add('loaded');  // показать
+}
+
 }
 
 // Load weather on startup + refresh when origin marker is set
 loadWeather();
-if (window.innerWidth <= 768) {
-  document.body.classList.add("widgets-collapsed");
-  const btn = document.getElementById("weather-toggle-btn");
-  if (btn) btn.textContent = "☀️ Show widgets";
-}
+
+
 
 // -------------------------------------------------------------------------
 // Effort Calculator — Grade Adjusted Pace, Calories, Splits
@@ -2794,8 +2956,13 @@ function closeProfileModal() {
 }
 
 function renderExpandedElevationChart(route) {
-  const labels = route.elevation_profile.map(p => (p.distance / 1000).toFixed(2));
-  const elevations = route.elevation_profile.map(p => p.elevation);
+  const chartData = route.elevation_profile.map(p => ({
+    x: parseFloat((p.distance / 1000).toFixed(3)),
+    y: p.elevation
+  }));
+
+  const totalKm = chartData[chartData.length - 1]?.x ?? 0;
+  const stepSize = totalKm <= 3 ? 0.5 : totalKm <= 10 ? 1.0 : totalKm <= 25 ? 2.0 : 5.0;
 
   if (expandedElevationChart) expandedElevationChart.destroy();
 
@@ -2803,10 +2970,9 @@ function renderExpandedElevationChart(route) {
   expandedElevationChart = new Chart(ctx, {
     type: "line",
     data: {
-      labels,
       datasets: [{
         label: "Elevation (m)",
-        data: elevations,
+        data: chartData,
         borderColor: PROFILE_COLORS[route.profile],
         backgroundColor: PROFILE_COLORS[route.profile] + "22",
         borderWidth: 2.5,
@@ -2824,15 +2990,20 @@ function renderExpandedElevationChart(route) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            title: items => `Distance: ${items[0].label} km`,
-            label: item => `Elevation: ${item.raw} m`,
+            title: items => `Distance: ${items[0].parsed.x.toFixed(2)} km`,
+            label: item => `Elevation: ${item.parsed.y} m`,
           }
         }
       },
       scales: {
         x: {
+          type: 'linear',
+          min: 0,
+          ticks: {
+            stepSize: stepSize,
+            callback: (value) => value % 1 === 0 ? value + ' km' : value.toFixed(1)
+          },
           title: { display: true, text: "Distance (km)" },
-          ticks: { maxTicksLimit: 12 }
         },
         y: {
           title: { display: true, text: "Elevation (m)" }
