@@ -56,21 +56,21 @@ def fetch_vienna_graph(force_refresh: bool = False):
 
 def attach_elevations(G):
     """
-    Read elevation for every node from a local SRTM GeoTIFF.
+    Read elevation for every node from a local DEM GeoTIFF (DEM_10m.tif).
     Falls back to 0 m for nodes outside the raster bounds.
     """
     import rasterio
 
-    srtm_path = os.path.join(DATA_DIR, "srtm/srtm_40_03.tif")
+    srtm_path = os.path.join(DATA_DIR, "srtm/DEM_10m.tif")
 
-    # FIX: raise early with a helpful message if the SRTM file is missing
+    # FIX: raise early with a helpful message if the DEM file is missing
     if not os.path.exists(srtm_path):
         raise FileNotFoundError(
-            f"SRTM file not found at {srtm_path}. "
-            "Download srtm_40_03.tif and place it in data/srtm/."
+            f"DEM file not found at {srtm_path}. "
+            "Place DEM_10m.tif in data/srtm/."
         )
 
-    logger.info("Reading elevations from local SRTM file...")
+    logger.info("Reading elevations from local DEM file...")
 
     with rasterio.open(srtm_path) as src:
         elevation_data = src.read(1)

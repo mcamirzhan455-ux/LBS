@@ -98,6 +98,7 @@ class RouteRequest(BaseModel):
     dest_lon: float | None = None
     router: str = "local"       # "local" | "graphhopper"
     mode: str = "point_to_point"  # "point_to_point" | "loop"
+    park_name: str | None = None
     loop_distance_km: float = 5.0
 
     # FIX: validate router and mode values so bad input fails fast with a clear message
@@ -111,8 +112,8 @@ class RouteRequest(BaseModel):
     @field_validator("mode")
     @classmethod
     def validate_mode(cls, v):
-        if v not in ("point_to_point", "loop"):
-            raise ValueError("mode must be 'point_to_point' or 'loop'")
+        if v not in ("point_to_point", "loop", "park_loop"):
+            raise ValueError("mode must be 'point_to_point', 'loop' or 'park_loop'")
         return v
 
     # FIX: clamp loop distance to a sane range
@@ -160,6 +161,12 @@ def health():
         "node_count": len(G.nodes) if G else 0,
     }
 
+@app.get("/parks")
+def get_parks():
+    from backend.router_gh import list_parks
+    return {"parks": list_parks()}
+
+
 
 @app.post("/routes", response_model=RouteResponse)
 def get_routes(req: RouteRequest):
@@ -186,6 +193,7 @@ def get_routes(req: RouteRequest):
             req.dest_lat, req.dest_lon,
             mode=req.mode,
             loop_distance_km=req.loop_distance_km,
+            park_name=req.park_name,
         )
     except RuntimeError as e:
         # FIX: propagate GH config errors as 500 with a readable message
